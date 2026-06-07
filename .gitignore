@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.streamlit/
+output/reports/*.xlsx
+!output/reports/.gitkeep

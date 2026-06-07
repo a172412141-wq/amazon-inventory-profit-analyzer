@@ -1,0 +1,220 @@
+fields:
+  sku:
+    aliases:
+      - SKU
+      - sku
+      - MSKU
+      - msku
+      - Seller SKU
+      - 商家SKU
+      - 店铺SKU
+  asin:
+    aliases:
+      - ASIN
+      - asin
+  parent_asin:
+    aliases:
+      - 父ASIN
+      - 父体
+      - 父体ASIN
+      - Parent ASIN
+      - parent_asin
+  spu:
+    aliases:
+      - SPU
+      - spu
+  product_line:
+    aliases:
+      - 品线
+      - 产品线
+      - 一级分类
+      - 一级品线
+  category_level_1:
+    aliases:
+      - 一级分类
+      - 一级品类
+      - category_level_1
+  product_name:
+    aliases:
+      - 产品名称
+      - 商品名称
+      - 品名
+      - 标题
+      - 型号
+  predicted_daily_sales:
+    aliases:
+      - 预测日销量
+      - 预计日销量
+      - predicted_daily_sales
+  stock_days:
+    aliases:
+      - 预计可售天数
+      - 可售天数
+      - 库存天数
+      - stock_days
+  recommended_replenishment_qty:
+    aliases:
+      - 建议补货量
+      - 建议补货数量
+      - recommended_replenishment_qty
+  total_supply_qty:
+    aliases:
+      - 总供给
+      - 总库存
+      - 库存总量
+      - total_supply_qty
+  available_qty:
+    aliases:
+      - 可用量
+      - 可售库存
+      - 可售数量
+      - available_qty
+  inbound_qty:
+    aliases:
+      - 待到
+      - 在途
+      - 待到合计
+      - FBA待到合计
+      - inbound_qty
+  sales_7d_units:
+    aliases:
+      - 7天订单商品数
+      - 7天订单商品总数
+      - 7天销量
+      - sales_7d_units
+  sales_14d_units:
+    aliases:
+      - 14天订单商品数
+      - 14天订单商品总数
+      - 14天销量
+      - sales_14d_units
+  sales_7d_amount:
+    aliases:
+      - 7天销售额
+      - 7天销售金额
+      - sales_7d_amount
+  sales_14d_amount:
+    aliases:
+      - 14天销售额
+      - 14天销售金额
+      - sales_14d_amount
+  order_gross_profit:
+    aliases:
+      - 订单毛利润
+      - 毛利润
+      - order_gross_profit
+  order_gross_margin:
+    aliases:
+      - 订单毛利率
+      - 毛利率
+      - order_gross_margin
+  ad_spend:
+    aliases:
+      - 广告花费
+      - 广告费用
+      - ad_spend
+  ad_sales:
+    aliases:
+      - 广告销售额
+      - 广告销售金额
+      - ad_sales
+  acos:
+    aliases:
+      - ACOS
+      - ACoS
+      - acos
+  aged_inventory_181_plus:
+    aliases:
+      - 181天以上库龄
+      - 181以上库龄
+      - 181+库龄
+      - 181天以上库存
+      - aged_inventory_181_plus
+  inventory_value:
+    aliases:
+      - 库存金额
+      - 库存货值
+      - 库存价值
+      - inventory_value
+
+required_fields:
+  - sku
+  - predicted_daily_sales
+  - stock_days
+  - recommended_replenishment_qty
+  - sales_7d_units
+  - sales_14d_units
+  - order_gross_margin
+  - ad_spend
+  - ad_sales
+  - acos
+
+required_any_groups:
+  - fields:
+      - total_supply_qty
+      - available_qty
+    label: total_supply_qty 或 available_qty
+
+numeric_fields:
+  - predicted_daily_sales
+  - stock_days
+  - recommended_replenishment_qty
+  - total_supply_qty
+  - available_qty
+  - inbound_qty
+  - sales_7d_units
+  - sales_14d_units
+  - sales_7d_amount
+  - sales_14d_amount
+  - order_gross_profit
+  - order_gross_margin
+  - ad_spend
+  - ad_sales
+  - acos
+  - aged_inventory_181_plus
+  - inventory_value
+
+percentage_fields:
+  - order_gross_margin
+  - acos
+
+zero_fill_fields:
+  - predicted_daily_sales
+  - stock_days
+  - recommended_replenishment_qty
+  - total_supply_qty
+  - available_qty
+  - inbound_qty
+  - sales_7d_units
+  - sales_14d_units
+  - sales_7d_amount
+  - sales_14d_amount
+  - ad_spend
+  - ad_sales
+  - aged_inventory_181_plus
+  - inventory_value
+
+money_fields:
+  - sales_7d_amount
+  - sales_14d_amount
+  - order_gross_profit
+  - ad_spend
+  - ad_sales
+  - ad_profit_after_ads
+  - inventory_value
+
+quantity_fields:
+  - predicted_daily_sales
+  - stock_days
+  - recommended_replenishment_qty
+  - total_supply_qty
+  - available_qty
+  - inbound_qty
+  - sales_7d_units
+  - sales_14d_units
+  - avg_sales_7d
+  - avg_sales_14d
+  - main_daily_sales
+  - calculated_stock_days
+  - available_stock_days
+  - aged_inventory_181_plus
