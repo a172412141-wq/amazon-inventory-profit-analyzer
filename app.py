@@ -21,6 +21,7 @@ from modules.validation import get_missing_required_fields
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 OUTPUT_DIR = BASE_DIR / "output" / "reports"
+PERCENT_HINTS = ("margin", "acos", "rate", "share", "ratio", "毛利率", "转化率", "占比")
 
 
 @st.cache_data(show_spinner=False)
@@ -45,6 +46,38 @@ def _format_metric(value: Any, percent: bool = False, money: bool = False) -> st
     if abs(number) >= 1000:
         return f"{number:,.0f}"
     return f"{number:.1f}" if number % 1 else f"{number:.0f}"
+
+
+def _is_percent_column(column: str) -> bool:
+    lower = column.lower()
+    return any(hint in lower for hint in PERCENT_HINTS)
+
+
+def _format_display_value(value: Any, as_percent: bool) -> Any:
+    if pd.isna(value):
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return value
+    if number == float("inf"):
+        return "∞"
+    if number == float("-inf"):
+        return "-∞"
+    if as_percent:
+        return f"{number:.2%}"
+    return f"{number:,.2f}"
+
+
+def _format_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
+    display = df.copy()
+    for column in display.columns:
+        numeric_values = pd.to_numeric(display[column], errors="coerce")
+        if numeric_values.notna().any():
+            display[column] = display[column].map(
+                lambda value, is_percent=_is_percent_column(str(column)): _format_display_value(value, is_percent)
+            )
+    return display
 
 
 def _options(df: pd.DataFrame, column: str) -> list[str]:
@@ -145,7 +178,7 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
 
 def _render_table(df: pd.DataFrame, height: int = 520) -> None:
     st.caption(f"{len(df):,} 行")
-    st.dataframe(df, use_container_width=True, height=height)
+    st.dataframe(_format_dataframe_for_display(df), use_container_width=True, height=height)
 
 
 def main() -> None:

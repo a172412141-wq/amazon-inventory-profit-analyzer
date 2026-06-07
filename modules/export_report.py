@@ -26,7 +26,7 @@ SHEET_ORDER = [
     ("13_数据异常", "data_errors"),
 ]
 
-PERCENT_HINTS = ("margin", "acos", "rate", "share", "毛利率", "转化率", "占比")
+PERCENT_HINTS = ("margin", "acos", "rate", "share", "ratio", "毛利率", "转化率", "占比")
 MONEY_FIELDS = {
     "sales_7d_amount",
     "sales_14d_amount",
@@ -66,9 +66,32 @@ def _display_df(df: pd.DataFrame | None) -> pd.DataFrame:
         return pd.DataFrame()
     result = df.copy().astype("object")
     result = result.drop(columns=[column for column in result.columns if column.startswith("_missing_")], errors="ignore")
+    result = _format_overview_value_column(result)
     for column_index in range(len(result.columns)):
         result.iloc[:, column_index] = result.iloc[:, column_index].map(_normalize_excel_value)
     return _sort_df(result)
+
+
+def _format_overview_value_column(df: pd.DataFrame) -> pd.DataFrame:
+    if not {"metric", "value"}.issubset(df.columns):
+        return df
+    result = df.copy()
+
+    def format_value(row: pd.Series) -> Any:
+        value = row.get("value")
+        if pd.isna(value):
+            return ""
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return value
+        metric = str(row.get("metric", ""))
+        if _is_percent_column(metric):
+            return f"{number:.2%}"
+        return f"{number:,.2f}"
+
+    result["value"] = result.apply(format_value, axis=1)
+    return result
 
 
 def _normalize_excel_value(value: Any) -> Any:
@@ -77,9 +100,14 @@ def _normalize_excel_value(value: Any) -> Any:
     return value
 
 
+def _is_percent_column(column: str) -> bool:
+    lower = column.lower()
+    return any(hint in lower for hint in PERCENT_HINTS)
+
+
 def _column_format(column: str, formats: dict[str, Any]) -> Any | None:
     lower = column.lower()
-    if any(hint in lower for hint in PERCENT_HINTS):
+    if _is_percent_column(column):
         return formats["percent"]
     if column in MONEY_FIELDS or "amount" in lower or "profit" in lower or "spend" in lower or "sales" in lower and "units" not in lower:
         return formats["money"]
@@ -104,7 +132,7 @@ def _write_sheet(writer: pd.ExcelWriter, sheet_name: str, df: pd.DataFrame) -> N
     formats = {
         "percent": workbook.add_format({"num_format": "0.00%"}),
         "money": workbook.add_format({"num_format": "#,##0.00"}),
-        "quantity": workbook.add_format({"num_format": "#,##0.0"}),
+        "quantity": workbook.add_format({"num_format": "#,##0.00"}),
     }
 
     for col_idx, column in enumerate(display.columns):
