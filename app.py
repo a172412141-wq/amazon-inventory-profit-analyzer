@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -21,7 +22,20 @@ from modules.validation import get_missing_required_fields
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 OUTPUT_DIR = BASE_DIR / "output" / "reports"
-PERCENT_HINTS = ("margin", "acos", "rate", "share", "ratio", "毛利率", "转化率", "占比")
+PERCENT_HINTS = (
+    "margin",
+    "acos",
+    "rate",
+    "share",
+    "ratio",
+    "percent",
+    "percentage",
+    "毛利率",
+    "利润率",
+    "转化率",
+    "占比",
+    "比率",
+)
 
 
 @st.cache_data(show_spinner=False)
@@ -53,31 +67,40 @@ def _is_percent_column(column: str) -> bool:
     return any(hint in lower for hint in PERCENT_HINTS)
 
 
-def _format_display_value(value: Any, as_percent: bool) -> Any:
-    if pd.isna(value):
-        return ""
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return value
-    if number == float("inf"):
-        return "∞"
-    if number == float("-inf"):
-        return "-∞"
-    if as_percent:
-        return f"{number:.2%}"
-    return f"{number:,.2f}"
+def _numeric_display_series(series: pd.Series) -> pd.Series | None:
+    if pd.api.types.is_bool_dtype(series):
+        return None
+    if pd.api.types.is_numeric_dtype(series):
+        numeric = pd.to_numeric(series, errors="coerce")
+    else:
+        non_empty = series.dropna()
+        if non_empty.empty:
+            return None
+        non_empty_text = non_empty.astype(str).str.strip()
+        non_empty = non_empty[non_empty_text != ""]
+        if non_empty.empty:
+            return None
+        parsed = pd.to_numeric(non_empty, errors="coerce")
+        if parsed.notna().sum() != len(non_empty):
+            return None
+        numeric = pd.to_numeric(series, errors="coerce")
+    return numeric.mask(~np.isfinite(numeric), np.nan)
 
 
-def _format_dataframe_for_display(df: pd.DataFrame) -> pd.DataFrame:
+def _prepare_dataframe_display(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
     display = df.copy()
+    column_config: dict[str, Any] = {}
     for column in display.columns:
-        numeric_values = pd.to_numeric(display[column], errors="coerce")
-        if numeric_values.notna().any():
-            display[column] = display[column].map(
-                lambda value, is_percent=_is_percent_column(str(column)): _format_display_value(value, is_percent)
-            )
-    return display
+        numeric_values = _numeric_display_series(display[column])
+        if numeric_values is None or not numeric_values.notna().any():
+            continue
+        if _is_percent_column(str(column)):
+            display[column] = numeric_values * 100
+            column_config[str(column)] = st.column_config.NumberColumn(format="%.2f%%")
+        else:
+            display[column] = numeric_values
+            column_config[str(column)] = st.column_config.NumberColumn(format="%.2f")
+    return display, column_config
 
 
 def _options(df: pd.DataFrame, column: str) -> list[str]:
@@ -144,7 +167,6 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
         ("广告销售额", False, True),
         ("整体 ACOS", True, False),
         ("订单毛利润", False, True),
-        ("广告后利润", False, True),
         ("平均毛利率", True, False),
         ("总库存/总供给", False, False),
         ("建议补货总量", False, False),
@@ -178,7 +200,8 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
 
 def _render_table(df: pd.DataFrame, height: int = 520) -> None:
     st.caption(f"{len(df):,} 行")
-    st.dataframe(_format_dataframe_for_display(df), use_container_width=True, height=height)
+    display, column_config = _prepare_dataframe_display(df)
+    st.dataframe(display, column_config=column_config, use_container_width=True, height=height)
 
 
 def main() -> None:
@@ -193,7 +216,6 @@ def main() -> None:
     sheet_summaries = get_sheet_summaries(uploaded_file, mapping_config)
     sheet_names = [item["sheet_name"] for item in sheet_summaries]
     selected_sheet = sheet_names[0] if len(sheet_names) == 1 else st.selectbox("分析 Sheet", sheet_names)
-    selected_summary = next(item for item in sheet_summaries if item["sheet_name"] == selected_sheet)
 
     sheet_info = pd.DataFrame(
         [
@@ -207,8 +229,6 @@ def main() -> None:
         ]
     )
     st.dataframe(sheet_info, use_container_width=True, hide_index=True)
-    st.subheader("前 20 行预览")
-    st.dataframe(selected_summary["preview"], use_container_width=True, height=420)
 
     with st.spinner("正在分析 SKU..."):
         raw_df, mapped_df, mapping_report = load_mapped_sheet(uploaded_file, selected_sheet, mapping_config)

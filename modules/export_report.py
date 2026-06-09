@@ -26,14 +26,26 @@ SHEET_ORDER = [
     ("13_数据异常", "data_errors"),
 ]
 
-PERCENT_HINTS = ("margin", "acos", "rate", "share", "ratio", "毛利率", "转化率", "占比")
+PERCENT_HINTS = (
+    "margin",
+    "acos",
+    "rate",
+    "share",
+    "ratio",
+    "percent",
+    "percentage",
+    "毛利率",
+    "利润率",
+    "转化率",
+    "占比",
+    "比率",
+)
 MONEY_FIELDS = {
     "sales_7d_amount",
     "sales_14d_amount",
     "order_gross_profit",
     "ad_spend",
     "ad_sales",
-    "ad_profit_after_ads",
     "inventory_value",
 }
 QUANTITY_HINTS = ("qty", "units", "days", "count", "sales_7d_units", "sales_14d_units")

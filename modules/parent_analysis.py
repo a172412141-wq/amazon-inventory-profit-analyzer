@@ -118,7 +118,6 @@ def analyze_parent(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         "ad_spend",
         "ad_sales",
         "order_gross_profit",
-        "ad_profit_after_ads",
         "weighted_stock_days",
         "acos",
         "order_gross_margin",
