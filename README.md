@@ -34,6 +34,7 @@ streamlit run app.py
 - `total_supply_qty` 或 `available_qty`
 - `sales_7d_units`
 - `sales_14d_units`
+- `order_gross_profit`
 - `order_gross_margin`
 - `ad_spend`
 - `ad_sales`
@@ -47,7 +48,6 @@ streamlit run app.py
 - `category_level_1`
 - `sales_7d_amount`
 - `sales_14d_amount`
-- `order_gross_profit`
 - `aged_inventory_181_plus`
 - `inbound_qty`
 - `inventory_value`
@@ -105,6 +105,8 @@ streamlit run app.py
 11. 观察
 
 注意：工具不会因为 `recommended_replenishment_qty` 大就直接建议补货。若利润、广告或现金流不健康，会覆盖补货建议。
+
+利润正负判断以 `order_gross_profit` 为准；`order_gross_margin` 仍用于高毛利分层和 ACOS 安全线对比。
 
 ## 如何调整 thresholds.yaml
 

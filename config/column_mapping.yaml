@@ -144,6 +144,7 @@ required_fields:
   - recommended_replenishment_qty
   - sales_7d_units
   - sales_14d_units
+  - order_gross_profit
   - order_gross_margin
   - ad_spend
   - ad_sales
@@ -200,7 +201,6 @@ money_fields:
   - order_gross_profit
   - ad_spend
   - ad_sales
-  - ad_profit_after_ads
   - inventory_value
 
 quantity_fields:

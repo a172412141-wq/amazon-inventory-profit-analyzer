@@ -38,7 +38,7 @@ def test_stock_days_avoids_division_by_zero():
     assert math.isinf(result.loc[0, "calculated_stock_days"])
 
 
-def test_profit_after_ads_prefers_gross_profit_and_has_fallback():
+def test_after_ads_profit_fields_are_not_created():
     df = pd.DataFrame(
         {
             "order_gross_profit": [100, None],
@@ -54,9 +54,9 @@ def test_profit_after_ads_prefers_gross_profit_and_has_fallback():
 
     result = calculate_metrics(df)
 
-    assert result.loc[0, "ad_profit_after_ads"] == 70
-    assert result.loc[1, "ad_profit_after_ads"] == 60
-    assert result.loc[1, "profit_after_ads_margin"] == 0.3
+    assert "ad_profit_after_ads" not in result.columns
+    assert "profit_after_ads_margin" not in result.columns
+    assert result.loc[0, "order_gross_profit"] == 100
 
 
 def test_percentage_fields_are_normalized():

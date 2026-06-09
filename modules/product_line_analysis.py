@@ -49,7 +49,6 @@ def analyze_product_lines(df: pd.DataFrame) -> pd.DataFrame:
         "weighted_stock_days",
         "acos",
         "order_gross_margin",
-        "profit_after_ads_margin",
         "aged_inventory_181_plus",
         "recent_sales_trend",
     ]

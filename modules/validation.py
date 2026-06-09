@@ -74,6 +74,11 @@ def validate_data(
         for idx in df.index[margin_missing]:
             _add_error(errors, sku_series.loc[idx], "毛利率为空", "高", "毛利率为空，已标记为无利润数据。")
 
+    if "order_gross_profit" not in missing_source_fields:
+        gross_profit_missing = df.get("order_gross_profit", pd.Series(index=df.index, dtype=float)).isna()
+        for idx in df.index[gross_profit_missing]:
+            _add_error(errors, sku_series.loc[idx], "毛利润为空", "高", "订单毛利润为空，无法判断利润健康。")
+
     ad_spend = pd.to_numeric(df.get("ad_spend", 0), errors="coerce").fillna(0)
     ad_sales = pd.to_numeric(df.get("ad_sales", 0), errors="coerce").fillna(0)
     acos = pd.to_numeric(df.get("acos", pd.Series(index=df.index, dtype=float)), errors="coerce")

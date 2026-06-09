@@ -34,17 +34,16 @@ def parent_structure_anomalies(df: pd.DataFrame) -> pd.DataFrame:
             stock_share = _safe_share(float(sku.get("total_supply_qty", 0) or 0), float(total_stock))
             ad_share = _safe_share(float(sku.get("ad_spend", 0) or 0), float(total_ad_spend))
             profit_share = _safe_share(float(sku.get("order_gross_profit", 0) or 0), float(total_profit))
-            margin = pd.to_numeric(pd.Series([sku.get("order_gross_margin")]), errors="coerce").iloc[0]
-            profit_after_ads_margin = pd.to_numeric(pd.Series([sku.get("profit_after_ads_margin")]), errors="coerce").iloc[0]
+            gross_profit = pd.to_numeric(pd.Series([sku.get("order_gross_profit")]), errors="coerce").iloc[0]
 
             problems: list[str] = []
             if not pd.isna(sales_share) and not pd.isna(stock_share) and sales_share >= 0.4 and stock_share <= 0.2:
                 problems.append("热卖变体缺货风险")
             if not pd.isna(sales_share) and not pd.isna(stock_share) and sales_share <= 0.1 and stock_share >= 0.3:
                 problems.append("滞销变体压货")
-            if not pd.isna(ad_share) and ad_share >= 0.4 and not pd.isna(profit_after_ads_margin) and profit_after_ads_margin < 0:
+            if not pd.isna(ad_share) and ad_share >= 0.4 and not pd.isna(gross_profit) and gross_profit <= 0:
                 problems.append("广告错配")
-            if not pd.isna(margin) and margin <= 0 and not pd.isna(sales_share) and sales_share >= 0.2:
+            if not pd.isna(gross_profit) and gross_profit <= 0 and not pd.isna(sales_share) and sales_share >= 0.2:
                 problems.append("高销量亏损变体")
 
             if problems:
@@ -57,8 +56,8 @@ def parent_structure_anomalies(df: pd.DataFrame) -> pd.DataFrame:
                         "sales_14d_units": sku.get("sales_14d_units", np.nan),
                         "total_supply_qty": sku.get("total_supply_qty", np.nan),
                         "ad_spend": sku.get("ad_spend", np.nan),
+                        "order_gross_profit": gross_profit,
                         "order_gross_margin": sku.get("order_gross_margin", np.nan),
-                        "profit_after_ads_margin": sku.get("profit_after_ads_margin", np.nan),
                         "sku_sales_share_in_parent": sales_share,
                         "sku_stock_share_in_parent": stock_share,
                         "sku_ad_spend_share_in_parent": ad_share,
@@ -73,14 +72,16 @@ def parent_structure_anomalies(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _parent_status(row: pd.Series, imbalanced_parents: set[str]) -> str:
+    gross_profit = row.get("order_gross_profit")
     margin = row.get("order_gross_margin")
-    after_ads = row.get("profit_after_ads_margin")
+    ad_spend = row.get("ad_spend")
+    acos = row.get("acos")
     stock_days = row.get("weighted_stock_days")
     parent_asin = str(row.get("parent_asin", ""))
 
-    if not pd.isna(margin) and margin <= 0:
+    if not pd.isna(gross_profit) and gross_profit <= 0:
         return "父体亏损"
-    if not pd.isna(after_ads) and after_ads < 0:
+    if not pd.isna(ad_spend) and ad_spend > 0 and not pd.isna(acos) and not pd.isna(margin) and acos >= margin:
         return "父体广告亏损"
     if not pd.isna(stock_days) and stock_days < 30:
         return "父体缺货风险"
@@ -121,7 +122,6 @@ def analyze_parent(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         "weighted_stock_days",
         "acos",
         "order_gross_margin",
-        "profit_after_ads_margin",
         "aged_inventory_181_plus",
         "recent_sales_trend",
     ]

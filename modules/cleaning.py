@@ -75,5 +75,5 @@ def clean_data(df: pd.DataFrame, mapping_config: dict[str, Any]) -> pd.DataFrame
         if field in zero_fill_fields:
             cleaned[field] = cleaned[field].fillna(0.0)
 
-    cleaned["profit_data_missing_flag"] = cleaned.get("order_gross_margin", pd.Series(np.nan)).isna()
+    cleaned["profit_data_missing_flag"] = cleaned.get("order_gross_profit", pd.Series(np.nan)).isna()
     return cleaned

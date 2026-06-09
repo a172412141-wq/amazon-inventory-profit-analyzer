@@ -18,7 +18,6 @@ SUM_FIELDS = [
     "ad_spend",
     "ad_sales",
     "order_gross_profit",
-    "ad_profit_after_ads",
     "aged_inventory_181_plus",
     "main_daily_sales",
 ]
@@ -102,16 +101,10 @@ def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | 
 
         sales_7d_amount = row.get("sales_7d_amount", 0.0)
         gross_profit = row.get("order_gross_profit", 0.0)
-        ad_profit = row.get("ad_profit_after_ads", 0.0)
         row["order_gross_margin"] = (
             gross_profit / sales_7d_amount
             if sales_7d_amount > 0 and gross_profit != 0
             else _weighted_average(group, "order_gross_margin", "sales_7d_amount")
-        )
-        row["profit_after_ads_margin"] = (
-            ad_profit / sales_7d_amount
-            if sales_7d_amount > 0 and ad_profit != 0
-            else _weighted_average(group, "profit_after_ads_margin", "sales_7d_amount")
         )
 
         avg_7d = row.get("sales_7d_units", 0.0) / 7

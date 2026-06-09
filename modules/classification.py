@@ -84,19 +84,12 @@ def _inventory_status(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
 
 
 def _profit_status(row: pd.Series) -> str:
-    margin = _num(row, "order_gross_margin")
-    profit_after_ads_margin = _num(row, "profit_after_ads_margin")
+    gross_profit = _num(row, "order_gross_profit")
 
-    if pd.isna(margin):
+    if pd.isna(gross_profit):
         return "无利润数据"
-    if margin <= 0:
+    if gross_profit <= 0:
         return "亏损"
-    if not pd.isna(profit_after_ads_margin):
-        if profit_after_ads_margin < 0:
-            return "广告后亏损"
-        if profit_after_ads_margin < 0.05:
-            return "微利"
-        return "盈利"
     return "盈利"
 
 
@@ -105,7 +98,7 @@ def _ad_status(row: pd.Series) -> str:
     ad_sales = _num(row, "ad_sales", 0)
     acos = _num(row, "acos")
     margin = _num(row, "order_gross_margin")
-    profit_after_ads_margin = _num(row, "profit_after_ads_margin")
+    gross_profit = _num(row, "order_gross_profit")
 
     if ad_spend <= 0:
         return "无广告"
@@ -113,30 +106,24 @@ def _ad_status(row: pd.Series) -> str:
         return "广告无转化"
     if not pd.isna(acos) and not pd.isna(margin) and acos >= margin:
         return "广告亏损"
-    if (
-        not pd.isna(acos)
-        and not pd.isna(margin)
-        and not pd.isna(profit_after_ads_margin)
-        and acos < margin
-        and profit_after_ads_margin >= 0
-    ):
+    if not pd.isna(acos) and not pd.isna(margin) and not pd.isna(gross_profit) and acos < margin and gross_profit > 0:
         return "广告健康"
     return "广告需复核"
 
 
 def _cashflow_risk(row: pd.Series) -> str:
     stock_days = _num(row, "stock_days")
-    margin = _num(row, "order_gross_margin")
+    gross_profit = _num(row, "order_gross_profit")
     main_daily_sales = _num(row, "main_daily_sales", 0)
     total_supply_qty = _num(row, "total_supply_qty", 0)
 
     if main_daily_sales <= 0 and total_supply_qty > 0:
         return "极高"
-    if not pd.isna(margin) and margin <= 0 and stock_days > 90:
+    if not pd.isna(gross_profit) and gross_profit <= 0 and stock_days > 90:
         return "高"
-    if stock_days <= 90 and margin > 0:
+    if not pd.isna(gross_profit) and stock_days <= 90 and gross_profit > 0:
         return "低"
-    if stock_days <= 180 and margin > 0:
+    if not pd.isna(gross_profit) and stock_days <= 180 and gross_profit > 0:
         return "中"
     if stock_days <= 270:
         return "高"

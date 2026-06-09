@@ -44,7 +44,6 @@ FULL_SKU_COLUMNS = [
     "ad_spend",
     "ad_sales",
     "acos",
-    "profit_after_ads_margin",
     "aged_inventory_181_plus",
     "inventory_value",
     "margin_level",

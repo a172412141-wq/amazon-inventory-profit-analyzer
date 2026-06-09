@@ -28,8 +28,6 @@ def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
     stock_days = _series(result, "stock_days", np.nan)
     ad_spend = _series(result, "ad_spend")
     ad_sales = _series(result, "ad_sales")
-    order_gross_profit = _series(result, "order_gross_profit", np.nan)
-    sales_7d_amount = _series(result, "sales_7d_amount", np.nan)
     order_gross_margin = _series(result, "order_gross_margin", np.nan)
     acos = _series(result, "acos", np.nan)
 
@@ -62,19 +60,6 @@ def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
     else:
         result["available_stock_days"] = stock_days
 
-    fallback_profit = sales_7d_amount * order_gross_margin - ad_spend
-    result["ad_profit_after_ads"] = np.where(
-        order_gross_profit.notna(),
-        order_gross_profit - ad_spend,
-        fallback_profit,
-    )
-
-    result["profit_after_ads_margin"] = np.where(
-        sales_7d_amount > 0,
-        result["ad_profit_after_ads"] / sales_7d_amount,
-        np.nan,
-    )
-
     result["break_even_acos"] = order_gross_margin
     result["ad_no_conversion_flag"] = (ad_spend > 0) & (ad_sales <= 0)
     result["acos_over_margin_flag"] = (acos >= order_gross_margin) & order_gross_margin.notna()
@@ -89,7 +74,5 @@ def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
         default="销量稳定",
     )
 
-    result["division_by_zero_flag"] = (
-        (result["main_daily_sales"] <= 0) | (sales_7d_amount <= 0) | sales_7d_amount.isna()
-    )
+    result["division_by_zero_flag"] = result["main_daily_sales"] <= 0
     return result

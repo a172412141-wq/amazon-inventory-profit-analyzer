@@ -9,7 +9,7 @@ def _status_and_recommendation(row: pd.Series, high_sales_threshold: float) -> t
     sales = row.get("sales_14d_amount", 0)
     stock_days = row.get("weighted_stock_days")
     margin = row.get("order_gross_margin")
-    after_ads = row.get("profit_after_ads_margin")
+    gross_profit = row.get("order_gross_profit")
     acos = row.get("acos")
     ad_spend = row.get("ad_spend", 0)
     ad_ratio = ad_spend / sales if sales and sales > 0 else 0
@@ -19,18 +19,18 @@ def _status_and_recommendation(row: pd.Series, high_sales_threshold: float) -> t
     high_margin_slow = not pd.isna(margin) and margin >= 0.30 and not pd.isna(stock_days) and stock_days >= 120
     ad_bad = not pd.isna(acos) and not pd.isna(margin) and acos >= margin
 
-    if not pd.isna(stock_days) and stock_days > 180 and ((not pd.isna(after_ads) and after_ads < 0) or ad_bad):
+    if not pd.isna(stock_days) and stock_days > 180 and ((not pd.isna(gross_profit) and gross_profit <= 0) or ad_bad):
         return "清退品线", "停补清货"
     if high_margin_slow:
         recommendation = "加大投入促周转" if stock_days <= 180 else "控补货防现金流恶化"
         return "高毛利低周转品线", recommendation
-    if sales >= high_sales_threshold and healthy_stock and not pd.isna(margin) and margin >= 0.15 and not pd.isna(after_ads) and after_ads >= 0.05:
+    if sales >= high_sales_threshold and healthy_stock and not pd.isna(margin) and margin >= 0.15 and not pd.isna(gross_profit) and gross_profit > 0:
         return "明星品线", "加资源"
-    if healthy_stock and not pd.isna(margin) and margin >= 0.15 and not pd.isna(after_ads) and after_ads >= 0.05 and ad_ratio < 0.10:
+    if healthy_stock and not pd.isna(margin) and margin >= 0.15 and not pd.isna(gross_profit) and gross_profit > 0 and ad_ratio < 0.10:
         return "现金牛品线", "稳定运营"
     if trend == "近期起量" and not pd.isna(stock_days) and stock_days <= 120 and not pd.isna(margin) and margin > 0:
         return "增长品线", "控风险测试"
-    if sales > 0 and ((not pd.isna(margin) and margin <= 0) or (not pd.isna(after_ads) and after_ads < 0.05) or ad_bad):
+    if sales > 0 and ((not pd.isna(gross_profit) and gross_profit <= 0) or ad_bad):
         return "问题品线", "优化广告/成本"
     return "观察品线", "稳定运营"
 
@@ -64,7 +64,6 @@ def analyze_spu(df: pd.DataFrame) -> pd.DataFrame:
         "weighted_stock_days",
         "acos",
         "order_gross_margin",
-        "profit_after_ads_margin",
         "aged_inventory_181_plus",
         "recent_sales_trend",
     ]
