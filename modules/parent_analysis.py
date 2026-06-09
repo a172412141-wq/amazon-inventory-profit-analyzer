@@ -6,6 +6,15 @@ import pandas as pd
 from .aggregation import aggregate_dimension
 
 
+def _threshold(thresholds: dict | None, path: tuple[str, ...], default: float) -> float:
+    current = thresholds or {}
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return float(current)
+
+
 def _safe_share(value: float, total: float) -> float:
     if total == 0 or pd.isna(total):
         return np.nan
@@ -71,13 +80,15 @@ def parent_structure_anomalies(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _parent_status(row: pd.Series, imbalanced_parents: set[str]) -> str:
+def _parent_status(row: pd.Series, imbalanced_parents: set[str], thresholds: dict | None = None) -> str:
     gross_profit = row.get("order_gross_profit")
     margin = row.get("order_gross_margin")
     ad_spend = row.get("ad_spend")
     acos = row.get("acos")
     stock_days = row.get("weighted_stock_days")
     parent_asin = str(row.get("parent_asin", ""))
+    healthy_max_days = _threshold(thresholds, ("inventory", "healthy_max_days"), 60)
+    urgent_redline_days = _threshold(thresholds, ("inventory", "urgent_redline_days"), 180)
 
     if not pd.isna(gross_profit) and gross_profit <= 0:
         return "父体亏损"
@@ -85,23 +96,23 @@ def _parent_status(row: pd.Series, imbalanced_parents: set[str]) -> str:
         return "父体广告亏损"
     if not pd.isna(stock_days) and stock_days < 30:
         return "父体缺货风险"
-    if not pd.isna(stock_days) and stock_days > 180:
+    if not pd.isna(stock_days) and stock_days > urgent_redline_days:
         return "父体高库存风险"
     if parent_asin in imbalanced_parents:
         return "父体结构失衡"
-    if not pd.isna(stock_days) and 30 <= stock_days <= 120 and not pd.isna(margin) and margin > 0:
+    if not pd.isna(stock_days) and 30 <= stock_days <= healthy_max_days and not pd.isna(margin) and margin > 0:
         return "父体健康"
     return "父体需复核"
 
 
-def analyze_parent(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def analyze_parent(df: pd.DataFrame, thresholds: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     anomalies = parent_structure_anomalies(df)
     summary = aggregate_dimension(df, "parent_asin")
     if summary.empty:
         return summary, anomalies
 
     imbalanced = set(anomalies["parent_asin"].astype(str)) if not anomalies.empty else set()
-    summary["parent_status"] = summary.apply(lambda row: _parent_status(row, imbalanced), axis=1)
+    summary["parent_status"] = summary.apply(lambda row: _parent_status(row, imbalanced, thresholds), axis=1)
     ordered = [
         "parent_asin",
         "parent_status",

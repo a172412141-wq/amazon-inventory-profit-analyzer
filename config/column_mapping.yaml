@@ -118,6 +118,33 @@ fields:
       - 广告销售额
       - 广告销售金额
       - ad_sales
+  ad_impressions:
+    aliases:
+      - 广告曝光量
+      - 广告曝光数
+      - 曝光量
+      - 曝光数
+      - ad_impressions
+      - impressions
+  ad_clicks:
+    aliases:
+      - 广告点击数
+      - 广告点击量
+      - 点击数
+      - ad_clicks
+      - clicks
+  ad_orders:
+    aliases:
+      - 广告订单
+      - 广告订单量
+      - 广告订单数
+      - ad_orders
+  ctr:
+    aliases:
+      - CTR
+      - 广告CTR
+      - 点击率
+      - ctr
   acos:
     aliases:
       - ACOS
@@ -171,12 +198,17 @@ numeric_fields:
   - order_gross_margin
   - ad_spend
   - ad_sales
+  - ad_impressions
+  - ad_clicks
+  - ad_orders
+  - ctr
   - acos
   - aged_inventory_181_plus
   - inventory_value
 
 percentage_fields:
   - order_gross_margin
+  - ctr
   - acos
 
 zero_fill_fields:
@@ -201,6 +233,8 @@ money_fields:
   - order_gross_profit
   - ad_spend
   - ad_sales
+  - cpc
+  - current_daily_sales_amount
   - inventory_value
 
 quantity_fields:
@@ -215,6 +249,9 @@ quantity_fields:
   - avg_sales_7d
   - avg_sales_14d
   - main_daily_sales
+  - current_daily_sales_units
+  - ideal_turnover_daily_units
   - calculated_stock_days
   - available_stock_days
+  - inbound_stock_days
   - aged_inventory_181_plus

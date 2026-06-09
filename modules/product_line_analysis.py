@@ -6,21 +6,21 @@ from .aggregation import aggregate_dimension
 from .spu_analysis import _status_and_recommendation
 
 
-def _prepare_dimension(df: pd.DataFrame, column: str, label: str) -> pd.DataFrame:
+def _prepare_dimension(df: pd.DataFrame, column: str, label: str, thresholds: dict | None = None) -> pd.DataFrame:
     summary = aggregate_dimension(df, column, label)
     if summary.empty:
         return summary
     high_sales_threshold = summary["sales_14d_amount"].quantile(0.8) if "sales_14d_amount" in summary.columns else 0
-    pairs = summary.apply(lambda row: _status_and_recommendation(row, high_sales_threshold), axis=1)
+    pairs = summary.apply(lambda row: _status_and_recommendation(row, high_sales_threshold, thresholds), axis=1)
     summary["line_status"] = [pair[0] for pair in pairs]
     summary["operation_recommendation"] = [pair[1] for pair in pairs]
     return summary
 
 
-def analyze_product_lines(df: pd.DataFrame) -> pd.DataFrame:
+def analyze_product_lines(df: pd.DataFrame, thresholds: dict | None = None) -> pd.DataFrame:
     parts = [
-        _prepare_dimension(df, "product_line", "product_line"),
-        _prepare_dimension(df, "category_level_1", "category_level_1"),
+        _prepare_dimension(df, "product_line", "product_line", thresholds),
+        _prepare_dimension(df, "category_level_1", "category_level_1", thresholds),
     ]
     parts = [part for part in parts if not part.empty]
     if not parts:

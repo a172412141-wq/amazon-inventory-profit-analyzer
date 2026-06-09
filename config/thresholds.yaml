@@ -2,21 +2,26 @@ inventory:
   severe_stockout_days: 14
   stockout_warning_days: 30
   healthy_min_days: 30
-  healthy_max_days: 120
-  slow_turnover_days: 120
-  overstock_days: 180
-  clearance_days: 270
+  healthy_max_days: 60
+  acceleration_days: 60
+  redline_days: 90
+  urgent_redline_days: 180
+  slow_turnover_days: 90
+  overstock_days: 90
+  clearance_days: 180
+  ideal_turnover_days: 90
+  max_over_90_inventory_ratio: 0.25
 
 margin:
-  high_margin: 0.30
-  medium_margin: 0.15
+  high_margin: 0.15
+  medium_margin: 0.08
   low_margin: 0.00
 
 cashflow:
   good_turnover_min_days: 30
-  good_turnover_max_days: 90
+  good_turnover_max_days: 60
   high_margin_slow_turnover_min_days: 60
-  high_margin_slow_turnover_max_days: 120
+  high_margin_slow_turnover_max_days: 90
   high_margin_control_replenishment_days: 180
 
 ads:

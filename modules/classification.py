@@ -26,18 +26,20 @@ def _num(row: pd.Series, column: str, default: float = np.nan) -> float:
 
 
 def _margin_level(value: float, thresholds: dict[str, Any] | None) -> str:
-    high = _get_threshold(thresholds, ("margin", "high_margin"), 0.30)
-    medium = _get_threshold(thresholds, ("margin", "medium_margin"), 0.15)
+    high = _get_threshold(thresholds, ("margin", "high_margin"), 0.15)
+    medium = _get_threshold(thresholds, ("margin", "medium_margin"), 0.08)
     low = _get_threshold(thresholds, ("margin", "low_margin"), 0.0)
 
     if pd.isna(value):
         return "无利润数据"
+    if value <= low:
+        return "亏损"
     if value >= high:
-        return "高毛利"
+        return "高毛利率水平"
     if medium <= value < high:
-        return "中毛利"
+        return "中毛利率水平"
     if low < value < medium:
-        return "低毛利"
+        return "低毛利率水平"
     return "亏损"
 
 
@@ -52,13 +54,13 @@ def _turnover_level(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
         return "未知"
     if stock_days < 30:
         return "快周转"
-    if stock_days <= 90:
+    if stock_days <= _get_threshold(thresholds, ("inventory", "healthy_max_days"), 60):
         return "良性周转"
-    if stock_days <= 180:
-        return "慢周转"
-    if stock_days <= 270:
-        return "高库存压力"
-    return "严重滞销"
+    if stock_days <= _get_threshold(thresholds, ("inventory", "urgent_redline_days"), 180):
+        if stock_days <= _get_threshold(thresholds, ("inventory", "redline_days"), 90):
+            return "61-90天加急周转"
+        return "91-180天红线库存"
+    return "180天+超红线库存"
 
 
 def _inventory_status(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
@@ -74,13 +76,13 @@ def _inventory_status(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
         return "严重缺货风险"
     if stock_days < _get_threshold(thresholds, ("inventory", "stockout_warning_days"), 30):
         return "即将断货"
-    if stock_days <= _get_threshold(thresholds, ("inventory", "healthy_max_days"), 120):
+    if stock_days <= _get_threshold(thresholds, ("inventory", "healthy_max_days"), 60):
         return "库存健康"
-    if stock_days <= _get_threshold(thresholds, ("inventory", "overstock_days"), 180):
-        return "库存偏高"
-    if stock_days <= _get_threshold(thresholds, ("inventory", "clearance_days"), 270):
-        return "高库存压力"
-    return "清货风险"
+    if stock_days <= _get_threshold(thresholds, ("inventory", "redline_days"), 90):
+        return "61-90天加急处理"
+    if stock_days <= _get_threshold(thresholds, ("inventory", "urgent_redline_days"), 180):
+        return "91-180天红线P0处理"
+    return "180天+超红线紧急处理"
 
 
 def _profit_status(row: pd.Series) -> str:
@@ -111,7 +113,7 @@ def _ad_status(row: pd.Series) -> str:
     return "广告需复核"
 
 
-def _cashflow_risk(row: pd.Series) -> str:
+def _cashflow_risk(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
     stock_days = _num(row, "stock_days")
     gross_profit = _num(row, "order_gross_profit")
     main_daily_sales = _num(row, "main_daily_sales", 0)
@@ -119,15 +121,17 @@ def _cashflow_risk(row: pd.Series) -> str:
 
     if main_daily_sales <= 0 and total_supply_qty > 0:
         return "极高"
-    if not pd.isna(gross_profit) and gross_profit <= 0 and stock_days > 90:
+    if stock_days > _get_threshold(thresholds, ("inventory", "urgent_redline_days"), 180):
+        return "极高"
+    if stock_days > _get_threshold(thresholds, ("inventory", "redline_days"), 90):
+        return "极高"
+    if stock_days > _get_threshold(thresholds, ("inventory", "healthy_max_days"), 60):
         return "高"
-    if not pd.isna(gross_profit) and stock_days <= 90 and gross_profit > 0:
+    if not pd.isna(gross_profit) and gross_profit <= 0:
+        return "高"
+    if not pd.isna(gross_profit) and stock_days <= _get_threshold(thresholds, ("inventory", "redline_days"), 90) and gross_profit > 0:
         return "低"
-    if not pd.isna(gross_profit) and stock_days <= 180 and gross_profit > 0:
-        return "中"
-    if stock_days <= 270:
-        return "高"
-    return "极高"
+    return "中"
 
 
 def classify_skus(df: pd.DataFrame, thresholds: dict[str, Any] | None = None) -> pd.DataFrame:
@@ -138,5 +142,5 @@ def classify_skus(df: pd.DataFrame, thresholds: dict[str, Any] | None = None) ->
     result["inventory_status"] = result.apply(lambda row: _inventory_status(row, thresholds), axis=1)
     result["profit_status"] = result.apply(_profit_status, axis=1)
     result["ad_status"] = result.apply(_ad_status, axis=1)
-    result["cashflow_risk_level"] = result.apply(_cashflow_risk, axis=1)
+    result["cashflow_risk_level"] = result.apply(lambda row: _cashflow_risk(row, thresholds), axis=1)
     return result

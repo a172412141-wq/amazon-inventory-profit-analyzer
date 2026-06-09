@@ -32,6 +32,8 @@ PERCENT_HINTS = (
     "rate",
     "share",
     "ratio",
+    "ctr",
+    "cvr",
     "percent",
     "percentage",
     "毛利率",
@@ -46,6 +48,8 @@ MONEY_FIELDS = {
     "order_gross_profit",
     "ad_spend",
     "ad_sales",
+    "cpc",
+    "current_daily_sales_amount",
     "inventory_value",
 }
 QUANTITY_HINTS = ("qty", "units", "days", "count", "sales_7d_units", "sales_14d_units")

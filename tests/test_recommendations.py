@@ -22,7 +22,7 @@ def make_row(**overrides):
     return pd.Series(base)
 
 
-def test_clearance_when_stock_days_above_270():
+def test_clearance_when_stock_days_above_180():
     decision = recommend_action(make_row(stock_days=300, order_gross_margin=0.4))
 
     assert decision["final_action"] == "清货处理"
@@ -42,22 +42,24 @@ def test_negative_gross_profit_with_replenishment_pauses_replenishment():
     assert decision["final_action"] == "暂缓补货"
 
 
-def test_high_margin_60_to_120_days_accelerates_turnover():
+def test_high_margin_61_to_90_days_accelerates_turnover():
     decision = recommend_action(make_row(stock_days=90, order_gross_profit=100, order_gross_margin=0.4))
 
     assert decision["final_action"] == "加大投入加速周转"
 
 
-def test_high_margin_120_to_180_days_controls_replenishment():
+def test_stock_days_91_to_180_forbids_replenishment():
     decision = recommend_action(make_row(stock_days=150, order_gross_profit=100, order_gross_margin=0.4))
 
-    assert decision["final_action"] == "控补货促周转"
+    assert decision["final_action"] == "禁止补货"
+    assert decision["priority"] == "P0"
 
 
-def test_high_margin_above_180_days_stops_replenishment():
+def test_stock_days_above_180_clears_inventory():
     decision = recommend_action(make_row(stock_days=200, order_gross_profit=100, order_gross_margin=0.4))
 
-    assert decision["final_action"] == "高毛利停补"
+    assert decision["final_action"] == "清货处理"
+    assert decision["priority"] == "P0"
 
 
 def test_stock_days_below_14_positive_margin_replenishes_immediately():
@@ -84,8 +86,8 @@ def test_healthy_inventory_and_ads_can_add_ads():
         make_row(
             stock_days=60,
             order_gross_profit=100,
-            order_gross_margin=0.2,
-            acos=0.1,
+            order_gross_margin=0.1,
+            acos=0.05,
             recommended_replenishment_qty=0,
             recent_sales_trend="销量稳定",
         )

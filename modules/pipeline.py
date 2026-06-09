@@ -27,6 +27,9 @@ FULL_SKU_COLUMNS = [
     "stock_days",
     "calculated_stock_days",
     "available_stock_days",
+    "inbound_stock_days",
+    "over_90_stock_qty",
+    "over_90_inventory_ratio",
     "recommended_replenishment_qty",
     "total_supply_qty",
     "available_qty",
@@ -38,12 +41,21 @@ FULL_SKU_COLUMNS = [
     "avg_sales_7d",
     "avg_sales_14d",
     "main_daily_sales",
+    "current_daily_sales_units",
+    "current_daily_sales_amount",
+    "ideal_turnover_daily_units",
     "recent_sales_trend",
     "order_gross_profit",
     "order_gross_margin",
     "ad_spend",
     "ad_sales",
+    "ad_impressions",
+    "ad_clicks",
+    "ad_orders",
     "acos",
+    "cpc",
+    "ctr",
+    "ad_order_share",
     "aged_inventory_181_plus",
     "inventory_value",
     "margin_level",
@@ -72,6 +84,23 @@ def _nunique(df: pd.DataFrame, column: str) -> int:
     return int(values[values != ""].nunique())
 
 
+def _safe_divide(numerator: float, denominator: float) -> float:
+    return float(numerator / denominator) if denominator and denominator > 0 else np.nan
+
+
+def _format_ratio(value: float) -> str:
+    return "-" if pd.isna(value) else f"{value:.2%}"
+
+
+def _threshold(thresholds: dict[str, Any] | None, path: tuple[str, ...], default: float) -> float:
+    current: Any = thresholds or {}
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return float(current)
+
+
 def prepare_full_sku_table(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
     for column in FULL_SKU_COLUMNS:
@@ -83,17 +112,34 @@ def prepare_full_sku_table(df: pd.DataFrame) -> pd.DataFrame:
 def build_overview(
     full_sku: pd.DataFrame,
     focus_reports: dict[str, pd.DataFrame],
+    thresholds: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str, pd.DataFrame]:
     sku_count = _nunique(full_sku, "sku") or len(full_sku)
     ad_spend = _sum(full_sku, "ad_spend")
     ad_sales = _sum(full_sku, "ad_sales")
-    overall_acos = ad_spend / ad_sales if ad_sales > 0 else np.nan
+    overall_acos = _safe_divide(ad_spend, ad_sales)
+    ad_clicks = _sum(full_sku, "ad_clicks")
+    ad_impressions = _sum(full_sku, "ad_impressions")
+    ad_orders = _sum(full_sku, "ad_orders")
+    sales_14d_units = _sum(full_sku, "sales_14d_units")
+    sales_14d_amount = _sum(full_sku, "sales_14d_amount")
     sales_7d_amount = _sum(full_sku, "sales_7d_amount")
     gross_profit = _sum(full_sku, "order_gross_profit")
     avg_margin = gross_profit / sales_7d_amount if sales_7d_amount > 0 and gross_profit != 0 else pd.to_numeric(
         full_sku.get("order_gross_margin", pd.Series(dtype=float)),
         errors="coerce",
     ).mean()
+    total_supply = _sum(full_sku, "total_supply_qty")
+    inbound_qty = _sum(full_sku, "inbound_qty")
+    main_daily_sales = _sum(full_sku, "main_daily_sales")
+    available_qty = _sum(full_sku, "available_qty")
+    available_stock_qty = available_qty if available_qty > 0 else max(total_supply - inbound_qty, 0)
+    ideal_turnover_daily_units = _sum(full_sku, "ideal_turnover_daily_units")
+    over_90_inventory_ratio = _safe_divide(_sum(full_sku, "over_90_stock_qty"), total_supply)
+    max_over_90_ratio = _threshold(thresholds, ("inventory", "max_over_90_inventory_ratio"), 0.25)
+    ad_order_share = _safe_divide(ad_orders, sales_14d_units) if ad_orders > 0 else np.nan
+    if pd.isna(ad_order_share):
+        ad_order_share = _safe_divide(ad_sales, sales_14d_amount)
 
     high_margin_slow_count = len(focus_reports.get("high_margin_slow_turnover", pd.DataFrame()))
     clearance_count = int(full_sku.get("final_action", pd.Series(dtype=str)).isin(["清货处理", "禁止补货", "高毛利停补"]).sum())
@@ -106,13 +152,22 @@ def build_overview(
         "SPU 数": _nunique(full_sku, "spu"),
         "品线数": _nunique(full_sku, "product_line"),
         "14天销售额": _sum(full_sku, "sales_14d_amount"),
-        "14天销量": _sum(full_sku, "sales_14d_units"),
+        "14天销量": sales_14d_units,
+        "目前日均销量": _sum(full_sku, "current_daily_sales_units"),
+        "目前日均销售额": _sum(full_sku, "current_daily_sales_amount"),
+        "理想周转情况下日销量": ideal_turnover_daily_units,
         "总广告花费": ad_spend,
         "广告销售额": ad_sales,
         "整体 ACOS": overall_acos,
+        "广告订单占比": ad_order_share,
+        "CPC": _safe_divide(ad_spend, ad_clicks),
+        "CTR": _safe_divide(ad_clicks, ad_impressions),
         "订单毛利润": gross_profit,
         "平均毛利率": avg_margin,
-        "总库存/总供给": _sum(full_sku, "total_supply_qty"),
+        "总库存/总供给": total_supply,
+        "可售库存天数": _safe_divide(available_stock_qty, main_daily_sales),
+        "在途库存天数": _safe_divide(inbound_qty, main_daily_sales),
+        "90天+库存占比": over_90_inventory_ratio,
         "建议补货总量": _sum(full_sku, "recommended_replenishment_qty"),
         "清货风险 SKU 数": int((full_sku.get("final_action", pd.Series(dtype=str)) == "清货处理").sum()),
         "禁止补货 SKU 数": int((full_sku.get("final_action", pd.Series(dtype=str)) == "禁止补货").sum()),
@@ -129,9 +184,11 @@ def build_overview(
         f"当前主要问题：\n"
         f"1. 高毛利慢周转 SKU 有 {high_margin_slow_count} 个，说明部分利润被库存占用，需加速周转。\n"
         f"2. 清货/停补 SKU 有 {clearance_count} 个，说明库存现金流风险较高。\n"
-        f"3. 广告优化 SKU 有 {ad_optimization_count} 个，说明广告花费存在亏损或无转化。\n"
-        f"4. 紧急补货 SKU 有 {urgent_count} 个，需避免断货影响排名和销售。\n"
-        f"5. 建议优先关注头部问题 SKU 和尾部极端异常 SKU。"
+        f"3. 90天+库存占比为 {_format_ratio(over_90_inventory_ratio)}，理想状态应低于 {max_over_90_ratio:.0%}，"
+        f"需围绕目标日销量 {ideal_turnover_daily_units:,.1f} 加速周转。\n"
+        f"4. 广告优化 SKU 有 {ad_optimization_count} 个，说明广告花费存在亏损或无转化。\n"
+        f"5. 紧急补货 SKU 有 {urgent_count} 个，需避免断货影响排名和销售。\n"
+        f"6. 建议优先关注头部问题 SKU 和尾部极端异常 SKU。"
     )
 
     overview_rows = [{"metric": key, "value": value} for key, value in metrics.items()]
@@ -146,16 +203,16 @@ def run_analysis(
     thresholds: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cleaned = clean_data(mapped_df, mapping_config)
-    metric_df = calculate_metrics(cleaned)
+    metric_df = calculate_metrics(cleaned, thresholds)
     classified = classify_skus(metric_df, thresholds)
     full = apply_recommendations(classified, thresholds)
     data_errors = validate_data(full, mapping_report, mapping_config)
     focus_reports = build_focus_reports(full, thresholds)
-    parent_analysis, parent_structure = analyze_parent(full)
-    spu_analysis = analyze_spu(full)
-    product_line_analysis = analyze_product_lines(full)
+    parent_analysis, parent_structure = analyze_parent(full, thresholds)
+    spu_analysis = analyze_spu(full, thresholds)
+    product_line_analysis = analyze_product_lines(full, thresholds)
     full_sku = prepare_full_sku_table(full)
-    overview_metrics, overview_summary, overview = build_overview(full_sku, focus_reports)
+    overview_metrics, overview_summary, overview = build_overview(full_sku, focus_reports, thresholds)
 
     report_tables = {
         "overview": overview,

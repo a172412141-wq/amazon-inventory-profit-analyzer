@@ -48,6 +48,10 @@ streamlit run app.py
 - `category_level_1`
 - `sales_7d_amount`
 - `sales_14d_amount`
+- `ad_impressions`
+- `ad_clicks`
+- `ad_orders`
+- `ctr`
 - `aged_inventory_181_plus`
 - `inbound_qty`
 - `inventory_value`
@@ -64,6 +68,10 @@ streamlit run app.py
 - `7天订单商品总数` -> `sales_7d_units`
 - `14天订单商品总数` -> `sales_14d_units`
 - `订单毛利率` -> `order_gross_margin`
+- `广告曝光量` -> `ad_impressions`
+- `广告点击数` -> `ad_clicks`
+- `广告订单` -> `ad_orders`
+- `CTR` -> `ctr`
 - `广告花费` -> `ad_spend`
 - `广告销售额` -> `ad_sales`
 - `181以上库龄` -> `aged_inventory_181_plus`
@@ -90,15 +98,15 @@ streamlit run app.py
 
 ## 判断逻辑说明
 
-每个 SKU 只输出一个主动作 `final_action`，并带有 `priority` 和中文 `reason`。判断顺序以现金流和利润安全为先：
+每个 SKU 只输出一个主动作 `final_action`，并带有 `priority` 和中文 `reason`。判断顺序先看周转，再看利润和广告：
 
-1. 清货处理
-2. 禁止补货
-3. 暂缓补货
-4. 控广告
-5. 高毛利库存可控时加大投入加速周转
-6. 高毛利慢周转时控补货促周转
-7. 高毛利严重慢周转时停补
+1. 180 天以上库存为超红线，P0 清货处理。
+2. 91-180 天库存为红线，P0 禁止补货并处理周转。
+3. 61-90 天库存需结合在途库存加急清理，并测算目标日销量。
+4. 毛利润为负时暂缓补货或清货。
+5. 广告无转化、ACOS 超过毛利率时控广告。
+6. 高毛利且库存仍可控时加大投入加速周转。
+7. 高毛利但库存红线时优先现金流，不能继续补货。
 8. 立即补货 / 优先补货
 9. 正常补货 / 谨慎补货
 10. 可加广告
@@ -106,14 +114,14 @@ streamlit run app.py
 
 注意：工具不会因为 `recommended_replenishment_qty` 大就直接建议补货。若利润、广告或现金流不健康，会覆盖补货建议。
 
-利润正负判断以 `order_gross_profit` 为准；`order_gross_margin` 仍用于高毛利分层和 ACOS 安全线对比。
+利润正负判断以 `order_gross_profit` 为准；`order_gross_margin` 仍用于毛利率分层和 ACOS 安全线对比。毛利率分层为：0%-8% 低毛利率水平，8%-15% 中毛利率水平，15%+ 高毛利率水平。
 
 ## 如何调整 thresholds.yaml
 
 阈值集中在 `config/thresholds.yaml`：
 
-- `inventory`：缺货、健康库存、慢周转、清货天数阈值。
-- `margin`：高/中/低毛利阈值。
+- `inventory`：缺货、健康库存、61-90 加急、91-180 红线、180+ 超红线阈值。
+- `margin`：高/中/低毛利阈值，默认 8% 和 15%。
 - `cashflow`：良性周转和高毛利慢周转阈值。
 - `ads`：广告异常阈值。
 - `ranking`：头部 Top 百分比和尾部 Top N。
@@ -132,7 +140,7 @@ streamlit run app.py
 支持。清洗后统一转换为 `0.3`。
 
 **为什么高毛利 SKU 也会停补？**  
-高毛利但库存天数过长会占用现金流。超过 180 天会提示停补或控补货，超过 270 天优先清货。
+高毛利但库存天数过长会占用现金流。超过 90 天进入库存红线，超过 180 天进入超红线，优先停补、清货和加速周转。
 
 **为什么完整 SKU 表不是第一页？**  
 工具定位是经营动作判断，主结果优先展示重点问题和异常 SKU，完整表保留在后续页面和导出 Sheet 中。

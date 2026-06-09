@@ -63,14 +63,16 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
     acos = _num(row, "acos")
     aged_inventory = _num(row, "aged_inventory_181_plus", 0)
     inbound_qty = _num(row, "inbound_qty", 0)
+    inbound_stock_days = _num(row, "inbound_stock_days", 0)
+    ideal_daily_units = _num(row, "ideal_turnover_daily_units")
     trend = str(row.get("recent_sales_trend", ""))
 
-    high_margin = _threshold(thresholds, ("margin", "high_margin"), 0.30)
+    high_margin = _threshold(thresholds, ("margin", "high_margin"), 0.15)
     severe_stockout_days = _threshold(thresholds, ("inventory", "severe_stockout_days"), 14)
     stockout_warning_days = _threshold(thresholds, ("inventory", "stockout_warning_days"), 30)
-    healthy_max_days = _threshold(thresholds, ("inventory", "healthy_max_days"), 120)
-    overstock_days = _threshold(thresholds, ("inventory", "overstock_days"), 180)
-    clearance_days = _threshold(thresholds, ("inventory", "clearance_days"), 270)
+    healthy_max_days = _threshold(thresholds, ("inventory", "healthy_max_days"), 60)
+    redline_days = _threshold(thresholds, ("inventory", "redline_days"), 90)
+    urgent_redline_days = _threshold(thresholds, ("inventory", "urgent_redline_days"), 180)
     slow_min = _threshold(thresholds, ("cashflow", "high_margin_slow_turnover_min_days"), 60)
 
     ad_is_severe = (
@@ -79,41 +81,56 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
         or (not pd.isna(gross_profit) and gross_profit <= 0)
     )
 
-    # 1. 严重清货 / 禁止补货
+    target_text = f"目标日销量需提升至约 {ideal_daily_units:.1f}" if not pd.isna(ideal_daily_units) else "需测算目标日销量"
+
+    # 1. 周转超红线 / 无销量压货
     if (
-        stock_days > clearance_days
+        stock_days > urgent_redline_days
         or (main_daily_sales <= 0 and total_supply_qty > 0)
-        or (stock_days > overstock_days and not pd.isna(gross_profit) and gross_profit <= 0)
     ):
         return _decision(
             "清货处理",
-            "P1",
-            "库存天数过高 / 无销量压货 / 毛利润为负，现金流风险高，建议清货并停止补货。",
+            "P0",
+            "库存天数超过 180 天超红线 / 无销量压货，现金流风险极高，建议紧急清货并停止补货。",
         )
 
-    # High-margin overstock is a special stop-replenishment action. Keeping it
-    # ahead of the generic prohibition preserves the requested dedicated label.
-    if not pd.isna(margin) and margin >= high_margin and stock_days > overstock_days:
+    # 2. 91-180 天红线库存，先按周转处理，再看利润。
+    if stock_days > redline_days and not pd.isna(gross_profit) and gross_profit <= 0:
         return _decision(
-            "高毛利停补",
-            "P2",
-            "虽然毛利率高，但库存周转过慢，现金流风险高，禁止继续补货。",
+            "清货处理",
+            "P0",
+            f"库存天数超过 90 天红线，且订单毛利润为负，需 P0 处理；{target_text}，并停止补货。",
+        )
+    if stock_days > redline_days:
+        return _decision(
+            "禁止补货",
+            "P0",
+            f"库存天数处于 91-180 天红线，需 P0 控制周转；{target_text}，先停补并清理库存。",
         )
 
-    # 2. 禁止补货
-    if (
-        stock_days > overstock_days
-        or (aged_inventory > 0 and stock_days > healthy_max_days)
-        or (inbound_qty > 0 and stock_days > healthy_max_days)
-        or (not pd.isna(gross_profit) and gross_profit <= 0 and stock_days > 90)
-    ):
-        return _decision("禁止补货", "P2", "库存或在途压力较大，继续补货会恶化现金流。")
+    # 3. 61-90 天需要加急周转，并重点看在途库存是否继续推高库存天数。
+    if stock_days > healthy_max_days:
+        if not ad_is_severe and not pd.isna(margin) and margin >= high_margin and not pd.isna(gross_profit) and gross_profit > 0:
+            return _decision(
+                "加大投入加速周转",
+                "P1",
+                f"库存天数处于 61-90 天加急区间，毛利率和订单毛利润仍可支撑投入；{target_text}，需结合在途库存 {inbound_stock_days:.1f} 天加速周转。",
+            )
+        return _decision(
+            "控补货促周转",
+            "P1",
+            f"库存天数处于 61-90 天加急区间，需先控制补货并清理在途库存；{target_text}。",
+        )
 
-    # 3. 毛利为负 / 暂缓补货
+    # 4. 库龄或在途压力
+    if (aged_inventory > 0 and stock_days > healthy_max_days) or (inbound_qty > 0 and stock_days > healthy_max_days):
+        return _decision("禁止补货", "P1", "库存或在途压力较大，继续补货会恶化现金流。")
+
+    # 5. 毛利为负 / 暂缓补货
     if not pd.isna(gross_profit) and gross_profit <= 0 and recommended_qty > 0:
         return _decision("暂缓补货", "P2", "虽有补货建议，但订单毛利润为负，不能继续放大亏损 SKU。")
 
-    # 4. 广告严重异常 / 控广告
+    # 6. 广告严重异常 / 控广告
     if ad_is_severe:
         if stock_days < severe_stockout_days and recommended_qty > 0 and not pd.isna(gross_profit) and gross_profit > 0:
             return _decision(
@@ -123,7 +140,7 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
             )
         return _decision("控广告", "P2", "广告效率低于利润安全线，建议降低预算、暂停低效广告或重构投放。")
 
-    # 5. 高毛利 + 良性偏慢周转
+    # 7. 高毛利 + 健康库存，可加投入加速周转
     if (
         not pd.isna(margin)
         and margin >= high_margin
@@ -135,15 +152,7 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
         return _decision(
             "加大投入加速周转",
             "P2",
-            "毛利率较高，库存仍在良性可控区间，但周转偏慢。建议适度增加广告、优惠券或页面转化优化投入，把库存天数压回 45-90 天。",
-        )
-
-    # 6. 高毛利 + 慢周转
-    if not pd.isna(margin) and margin >= high_margin and healthy_max_days < stock_days <= overstock_days and main_daily_sales > 0:
-        return _decision(
-            "控补货促周转",
-            "P2",
-            "毛利率较高，但库存周转偏慢，现金占用偏高。建议暂缓补货，通过有效广告和轻促销提升周转。",
+            "毛利率较高，库存仍在健康可控区间，但周转偏慢。建议适度增加广告、优惠券或页面转化优化投入，把库存天数压回 60 天以内。",
         )
 
     # 8. 立即补货
@@ -228,6 +237,8 @@ def _top_percent_mask(df: pd.DataFrame, column: str, top_percent: float) -> pd.S
 
 def select_head_problem_skus(df: pd.DataFrame, thresholds: dict[str, Any] | None = None) -> pd.DataFrame:
     top_percent = _threshold(thresholds, ("ranking", "top_percent"), 0.20)
+    high_margin = _threshold(thresholds, ("margin", "high_margin"), 0.15)
+    acceleration_days = _threshold(thresholds, ("inventory", "acceleration_days"), 60)
     top_columns = [
         "sales_14d_amount",
         "ad_spend",
@@ -255,7 +266,7 @@ def select_head_problem_skus(df: pd.DataFrame, thresholds: dict[str, Any] | None
             or (not pd.isna(gross_profit) and gross_profit <= 0)
         ):
             problems.append("高广告花费但广告亏损")
-        if not pd.isna(margin) and margin >= 0.30 and stock_days >= 120:
+        if not pd.isna(margin) and margin >= high_margin and stock_days >= acceleration_days:
             problems.append("高毛利但周转慢")
         if _is_true(top_masks["recommended_replenishment_qty"].reindex(df.index).loc[row.name]) and (
             (not pd.isna(gross_profit) and gross_profit <= 0)
@@ -342,21 +353,25 @@ def select_tail_abnormal_skus(df: pd.DataFrame, thresholds: dict[str, Any] | Non
     return _ensure_columns(sort_by_priority_action(selected), columns)
 
 
-def select_high_margin_slow_turnover(df: pd.DataFrame) -> pd.DataFrame:
+def select_high_margin_slow_turnover(df: pd.DataFrame, thresholds: dict[str, Any] | None = None) -> pd.DataFrame:
+    high_margin = _threshold(thresholds, ("margin", "high_margin"), 0.15)
+    acceleration_days = _threshold(thresholds, ("inventory", "acceleration_days"), 60)
+    redline_days = _threshold(thresholds, ("inventory", "redline_days"), 90)
+    urgent_redline_days = _threshold(thresholds, ("inventory", "urgent_redline_days"), 180)
     selected = df[
-        (pd.to_numeric(df.get("order_gross_margin"), errors="coerce") >= 0.30)
-        & (pd.to_numeric(df.get("stock_days"), errors="coerce") >= 60)
+        (pd.to_numeric(df.get("order_gross_margin"), errors="coerce") >= high_margin)
+        & (pd.to_numeric(df.get("stock_days"), errors="coerce") >= acceleration_days)
         & (pd.to_numeric(df.get("main_daily_sales"), errors="coerce") > 0)
     ].copy()
 
     def investment(row: pd.Series) -> str:
         stock_days = _num(row, "stock_days", 0)
         gross_profit = _num(row, "order_gross_profit")
-        if 60 <= stock_days <= 120 and not pd.isna(gross_profit) and gross_profit > 0:
+        if acceleration_days <= stock_days <= redline_days and not pd.isna(gross_profit) and gross_profit > 0:
             return "加大投入加速周转"
-        if 120 < stock_days <= 180:
+        if redline_days < stock_days <= urgent_redline_days:
             return "控补货促周转"
-        if stock_days > 180:
+        if stock_days > urgent_redline_days:
             return "高毛利停补"
         return "控风险测试"
 
@@ -375,6 +390,8 @@ def select_high_margin_slow_turnover(df: pd.DataFrame) -> pd.DataFrame:
         "sales_14d_amount",
         "ad_spend",
         "acos",
+        "ideal_turnover_daily_units",
+        "over_90_inventory_ratio",
         "final_action",
         "investment_recommendation",
         "reason",
@@ -413,10 +430,11 @@ def select_urgent_replenishment(df: pd.DataFrame) -> pd.DataFrame:
     return _ensure_columns(sort_by_priority_action(selected), columns)
 
 
-def select_clearance_stop(df: pd.DataFrame) -> pd.DataFrame:
+def select_clearance_stop(df: pd.DataFrame, thresholds: dict[str, Any] | None = None) -> pd.DataFrame:
+    urgent_redline_days = _threshold(thresholds, ("inventory", "urgent_redline_days"), 180)
     selected = df[
         df.get("final_action").isin(["清货处理", "禁止补货", "高毛利停补"])
-        | (pd.to_numeric(df.get("stock_days"), errors="coerce") > 180)
+        | (pd.to_numeric(df.get("stock_days"), errors="coerce") > urgent_redline_days)
         | (
             (pd.to_numeric(df.get("main_daily_sales"), errors="coerce") <= 0)
             & (pd.to_numeric(df.get("total_supply_qty"), errors="coerce") > 0)
@@ -458,8 +476,14 @@ def select_ad_optimization(df: pd.DataFrame) -> pd.DataFrame:
         "parent_asin",
         "spu",
         "product_line",
+        "ad_impressions",
+        "ad_clicks",
+        "ad_orders",
         "ad_spend",
         "ad_sales",
+        "ad_order_share",
+        "cpc",
+        "ctr",
         "acos",
         "order_gross_profit",
         "order_gross_margin",
@@ -477,9 +501,9 @@ def build_focus_reports(df: pd.DataFrame, thresholds: dict[str, Any] | None = No
     return {
         "head_problem_skus": select_head_problem_skus(df, thresholds),
         "tail_abnormal_skus": select_tail_abnormal_skus(df, thresholds),
-        "high_margin_slow_turnover": select_high_margin_slow_turnover(df),
+        "high_margin_slow_turnover": select_high_margin_slow_turnover(df, thresholds),
         "urgent_replenishment": select_urgent_replenishment(df),
-        "clearance_stop": select_clearance_stop(df),
+        "clearance_stop": select_clearance_stop(df, thresholds),
         "ad_optimization": select_ad_optimization(df),
     }
 

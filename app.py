@@ -28,6 +28,8 @@ PERCENT_HINTS = (
     "rate",
     "share",
     "ratio",
+    "ctr",
+    "cvr",
     "percent",
     "percentage",
     "毛利率",
@@ -131,11 +133,11 @@ def _build_filtered_tables(
     thresholds: dict[str, Any],
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Any], str]:
     focus = build_focus_reports(full, thresholds)
-    parent_analysis, parent_structure = analyze_parent(full)
-    spu_analysis = analyze_spu(full)
-    product_line_analysis = analyze_product_lines(full)
+    parent_analysis, parent_structure = analyze_parent(full, thresholds)
+    spu_analysis = analyze_spu(full, thresholds)
+    product_line_analysis = analyze_product_lines(full, thresholds)
     full_sku = prepare_full_sku_table(full)
-    metrics, summary, overview = build_overview(full_sku, focus)
+    metrics, summary, overview = build_overview(full_sku, focus, thresholds)
     visible_skus = set(full_sku["sku"].astype(str)) if "sku" in full_sku.columns else set()
     tables = {
         "overview": overview,
@@ -163,12 +165,21 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
         ("品线数", False, False),
         ("14天销售额", False, True),
         ("14天销量", False, False),
+        ("目前日均销量", False, False),
+        ("目前日均销售额", False, True),
+        ("理想周转情况下日销量", False, False),
         ("总广告花费", False, True),
         ("广告销售额", False, True),
         ("整体 ACOS", True, False),
+        ("广告订单占比", True, False),
+        ("CPC", False, True),
+        ("CTR", True, False),
         ("订单毛利润", False, True),
         ("平均毛利率", True, False),
         ("总库存/总供给", False, False),
+        ("可售库存天数", False, False),
+        ("在途库存天数", False, False),
+        ("90天+库存占比", True, False),
         ("建议补货总量", False, False),
         ("清货风险 SKU 数", False, False),
         ("禁止补货 SKU 数", False, False),

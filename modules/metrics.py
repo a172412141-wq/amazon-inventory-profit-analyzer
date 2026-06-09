@@ -4,6 +4,15 @@ import numpy as np
 import pandas as pd
 
 
+def _threshold(thresholds: dict | None, path: tuple[str, ...], default: float) -> float:
+    current = thresholds or {}
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return float(current)
+
+
 def _series(df: pd.DataFrame, column: str, default: float = 0.0) -> pd.Series:
     if column in df.columns:
         return pd.to_numeric(df[column], errors="coerce")
@@ -17,19 +26,27 @@ def _safe_divide(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     return result
 
 
-def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
+def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.DataFrame:
     result = df.copy()
 
     sales_7d_units = _series(result, "sales_7d_units")
     sales_14d_units = _series(result, "sales_14d_units")
+    sales_7d_amount = _series(result, "sales_7d_amount", np.nan)
+    sales_14d_amount = _series(result, "sales_14d_amount", np.nan)
     predicted_daily_sales = _series(result, "predicted_daily_sales", np.nan)
     total_supply_qty = _series(result, "total_supply_qty")
     available_qty = _series(result, "available_qty", np.nan)
+    inbound_qty = _series(result, "inbound_qty")
     stock_days = _series(result, "stock_days", np.nan)
     ad_spend = _series(result, "ad_spend")
     ad_sales = _series(result, "ad_sales")
+    ad_impressions = _series(result, "ad_impressions")
+    ad_clicks = _series(result, "ad_clicks")
+    ad_orders = _series(result, "ad_orders")
+    ctr_input = _series(result, "ctr", np.nan)
     order_gross_margin = _series(result, "order_gross_margin", np.nan)
     acos = _series(result, "acos", np.nan)
+    ideal_turnover_days = _threshold(thresholds, ("inventory", "ideal_turnover_days"), 90)
 
     result["avg_sales_7d"] = sales_7d_units / 7
     result["avg_sales_14d"] = sales_14d_units / 14
@@ -43,6 +60,16 @@ def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
         axis=1,
     )
     result["main_daily_sales"] = sales_candidates.max(axis=1, skipna=True).fillna(0.0)
+    result["current_daily_sales_units"] = np.where(
+        sales_7d_units > 0,
+        sales_7d_units / 7,
+        sales_14d_units / 14,
+    )
+    result["current_daily_sales_amount"] = np.where(
+        sales_7d_amount > 0,
+        sales_7d_amount / 7,
+        sales_14d_amount / 14,
+    )
 
     result["calculated_stock_days"] = np.where(
         result["main_daily_sales"] <= 0,
@@ -50,15 +77,29 @@ def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
         total_supply_qty / result["main_daily_sales"],
     )
 
-    has_available_qty = "available_qty" in result.columns and not available_qty.isna().all()
-    if has_available_qty:
-        result["available_stock_days"] = np.where(
-            result["main_daily_sales"] <= 0,
-            np.inf,
-            available_qty.fillna(0.0) / result["main_daily_sales"],
-        )
-    else:
-        result["available_stock_days"] = stock_days
+    available_stock_qty = available_qty.where(available_qty > 0, total_supply_qty - inbound_qty).clip(lower=0)
+    result["available_stock_days"] = np.where(
+        result["main_daily_sales"] <= 0,
+        np.inf,
+        available_stock_qty.fillna(0.0) / result["main_daily_sales"],
+    )
+    result["inbound_stock_days"] = np.where(
+        result["main_daily_sales"] <= 0,
+        np.inf,
+        inbound_qty.fillna(0.0) / result["main_daily_sales"],
+    )
+    result["ideal_turnover_daily_units"] = np.where(
+        ideal_turnover_days > 0,
+        total_supply_qty / ideal_turnover_days,
+        np.nan,
+    )
+    result["over_90_stock_qty"] = (total_supply_qty - result["main_daily_sales"] * ideal_turnover_days).clip(lower=0)
+    result["over_90_inventory_ratio"] = _safe_divide(result["over_90_stock_qty"], total_supply_qty)
+    result["cpc"] = _safe_divide(ad_spend, ad_clicks)
+    result["ctr"] = ctr_input.where(ctr_input.notna(), _safe_divide(ad_clicks, ad_impressions))
+    result["ad_order_share"] = _safe_divide(ad_orders, sales_14d_units)
+    amount_share = _safe_divide(ad_sales, sales_14d_amount)
+    result["ad_order_share"] = result["ad_order_share"].where(result["ad_order_share"].notna(), amount_share)
 
     result["break_even_acos"] = order_gross_margin
     result["ad_no_conversion_flag"] = (ad_spend > 0) & (ad_sales <= 0)
