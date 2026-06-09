@@ -21,6 +21,15 @@ def _safe_share(value: float, total: float) -> float:
     return float(value / total)
 
 
+def _to_float(value: object, default: float = 0.0) -> float:
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def parent_structure_anomalies(df: pd.DataFrame) -> pd.DataFrame:
     if "parent_asin" not in df.columns:
         return pd.DataFrame()
@@ -39,10 +48,10 @@ def parent_structure_anomalies(df: pd.DataFrame) -> pd.DataFrame:
         total_profit = pd.to_numeric(group.get("order_gross_profit"), errors="coerce").fillna(0).sum()
 
         for _, sku in group.iterrows():
-            sales_share = _safe_share(float(sku.get("sales_14d_units", 0) or 0), float(total_sales))
-            stock_share = _safe_share(float(sku.get("total_supply_qty", 0) or 0), float(total_stock))
-            ad_share = _safe_share(float(sku.get("ad_spend", 0) or 0), float(total_ad_spend))
-            profit_share = _safe_share(float(sku.get("order_gross_profit", 0) or 0), float(total_profit))
+            sales_share = _safe_share(_to_float(sku.get("sales_14d_units")), float(total_sales))
+            stock_share = _safe_share(_to_float(sku.get("total_supply_qty")), float(total_stock))
+            ad_share = _safe_share(_to_float(sku.get("ad_spend")), float(total_ad_spend))
+            profit_share = _safe_share(_to_float(sku.get("order_gross_profit")), float(total_profit))
             gross_profit = pd.to_numeric(pd.Series([sku.get("order_gross_profit")]), errors="coerce").iloc[0]
 
             problems: list[str] = []
