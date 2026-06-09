@@ -51,7 +51,12 @@ streamlit run app.py
 - `ad_impressions`
 - `ad_clicks`
 - `ad_orders`
+- `cpc`
 - `ctr`
+- `cvr`
+- `ad_cvr`
+- `sessions_7d`
+- `sessions_14d`
 - `aged_inventory_181_plus`
 - `inbound_qty`
 - `inventory_value`
@@ -71,7 +76,11 @@ streamlit run app.py
 - `广告曝光量` -> `ad_impressions`
 - `广告点击数` -> `ad_clicks`
 - `广告订单` -> `ad_orders`
+- `CPC` -> `cpc`
 - `CTR` -> `ctr`
+- `14天销售转化率` -> `cvr`
+- `广告CVR` -> `ad_cvr`
+- `14天会话数` -> `sessions_14d`
 - `广告花费` -> `ad_spend`
 - `广告销售额` -> `ad_sales`
 - `181以上库龄` -> `aged_inventory_181_plus`
@@ -92,7 +101,6 @@ streamlit run app.py
 8. `08_SKU完整判断`
 9. `09_父体分析`
 10. `10_父体结构异常`
-11. `11_SPU分析`
 12. `12_品线分析`
 13. `13_数据异常`
 

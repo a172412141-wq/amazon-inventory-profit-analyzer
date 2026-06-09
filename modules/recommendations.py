@@ -484,6 +484,8 @@ def select_ad_optimization(df: pd.DataFrame) -> pd.DataFrame:
         "ad_order_share",
         "cpc",
         "ctr",
+        "cvr",
+        "ad_cvr",
         "acos",
         "order_gross_profit",
         "order_gross_margin",

@@ -174,6 +174,8 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
         ("广告订单占比", True, False),
         ("CPC", False, True),
         ("CTR", True, False),
+        ("CVR", True, False),
+        ("广告CVR", True, False),
         ("订单毛利润", False, True),
         ("平均毛利率", True, False),
         ("总库存/总供给", False, False),

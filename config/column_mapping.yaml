@@ -121,30 +121,77 @@ fields:
   ad_impressions:
     aliases:
       - 广告曝光量
+      - 广告曝光
       - 广告曝光数
+      - 广告展示量
+      - 广告展示数
+      - 广告展示次数
       - 曝光量
       - 曝光数
+      - 展示量
+      - 展示数
       - ad_impressions
+      - Ad Impressions
       - impressions
   ad_clicks:
     aliases:
       - 广告点击数
+      - 广告点击
       - 广告点击量
+      - 广告点击次数
       - 点击数
+      - 点击量
+      - 点击次数
       - ad_clicks
+      - Ad Clicks
       - clicks
   ad_orders:
     aliases:
       - 广告订单
       - 广告订单量
       - 广告订单数
+      - 广告成交数
+      - 广告成交量
       - ad_orders
+      - Ad Orders
+  cpc:
+    aliases:
+      - CPC
+      - 广告CPC
+      - 平均CPC
+      - cpc
   ctr:
     aliases:
       - CTR
       - 广告CTR
       - 点击率
       - ctr
+  ad_cvr:
+    aliases:
+      - 广告CVR
+      - 广告转化率
+      - 广告销售转化率
+      - ad_cvr
+  cvr:
+    aliases:
+      - 14天销售转化率
+      - 7天销售转化率
+      - 销售转化率
+      - 转化率
+      - CVR
+      - cvr
+  sessions_7d:
+    aliases:
+      - 7天会话数
+      - 7天Session数
+      - 7天 Sessions
+      - sessions_7d
+  sessions_14d:
+    aliases:
+      - 14天会话数
+      - 14天Session数
+      - 14天 Sessions
+      - sessions_14d
   acos:
     aliases:
       - ACOS
@@ -201,7 +248,12 @@ numeric_fields:
   - ad_impressions
   - ad_clicks
   - ad_orders
+  - cpc
   - ctr
+  - ad_cvr
+  - cvr
+  - sessions_7d
+  - sessions_14d
   - acos
   - aged_inventory_181_plus
   - inventory_value
@@ -209,6 +261,8 @@ numeric_fields:
 percentage_fields:
   - order_gross_margin
   - ctr
+  - ad_cvr
+  - cvr
   - acos
 
 zero_fill_fields:

@@ -96,6 +96,10 @@ def test_ad_and_inventory_metrics_are_calculated():
             "ad_clicks": [100],
             "ad_orders": [7],
             "ctr": [pd.NA],
+            "ad_cvr": [pd.NA],
+            "cvr": [pd.NA],
+            "sessions_7d": [200],
+            "sessions_14d": [400],
             "order_gross_margin": [0.2],
         }
     )
@@ -104,6 +108,8 @@ def test_ad_and_inventory_metrics_are_calculated():
 
     assert result.loc[0, "cpc"] == 0.5
     assert result.loc[0, "ctr"] == 0.1
+    assert result.loc[0, "ad_cvr"] == 0.07
+    assert result.loc[0, "cvr"] == 0.07
     assert result.loc[0, "ad_order_share"] == 0.25
     assert result.loc[0, "available_stock_days"] == 60
     assert result.loc[0, "inbound_stock_days"] == 30

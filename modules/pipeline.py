@@ -52,9 +52,13 @@ FULL_SKU_COLUMNS = [
     "ad_impressions",
     "ad_clicks",
     "ad_orders",
+    "sessions_7d",
+    "sessions_14d",
     "acos",
     "cpc",
     "ctr",
+    "cvr",
+    "ad_cvr",
     "ad_order_share",
     "aged_inventory_181_plus",
     "inventory_value",
@@ -75,6 +79,13 @@ def _sum(df: pd.DataFrame, column: str) -> float:
         return 0.0
     value = pd.to_numeric(df[column], errors="coerce").sum(min_count=1)
     return 0.0 if pd.isna(value) else float(value)
+
+
+def _mean(df: pd.DataFrame, column: str) -> float:
+    if column not in df.columns:
+        return np.nan
+    value = pd.to_numeric(df[column], errors="coerce").mean()
+    return float(value) if not pd.isna(value) else np.nan
 
 
 def _nunique(df: pd.DataFrame, column: str) -> int:
@@ -121,6 +132,7 @@ def build_overview(
     ad_clicks = _sum(full_sku, "ad_clicks")
     ad_impressions = _sum(full_sku, "ad_impressions")
     ad_orders = _sum(full_sku, "ad_orders")
+    sessions_14d = _sum(full_sku, "sessions_14d")
     sales_14d_units = _sum(full_sku, "sales_14d_units")
     sales_14d_amount = _sum(full_sku, "sales_14d_amount")
     sales_7d_amount = _sum(full_sku, "sales_7d_amount")
@@ -140,6 +152,18 @@ def build_overview(
     ad_order_share = _safe_divide(ad_orders, sales_14d_units) if ad_orders > 0 else np.nan
     if pd.isna(ad_order_share):
         ad_order_share = _safe_divide(ad_sales, sales_14d_amount)
+    cpc = _safe_divide(ad_spend, ad_clicks)
+    if pd.isna(cpc):
+        cpc = _mean(full_sku, "cpc")
+    ctr = _safe_divide(ad_clicks, ad_impressions)
+    if pd.isna(ctr):
+        ctr = _mean(full_sku, "ctr")
+    cvr = _safe_divide(sales_14d_units, sessions_14d)
+    if pd.isna(cvr):
+        cvr = _mean(full_sku, "cvr")
+    ad_cvr = _safe_divide(ad_orders, ad_clicks)
+    if pd.isna(ad_cvr):
+        ad_cvr = _mean(full_sku, "ad_cvr")
 
     high_margin_slow_count = len(focus_reports.get("high_margin_slow_turnover", pd.DataFrame()))
     clearance_count = int(full_sku.get("final_action", pd.Series(dtype=str)).isin(["清货处理", "禁止补货", "高毛利停补"]).sum())
@@ -160,8 +184,10 @@ def build_overview(
         "广告销售额": ad_sales,
         "整体 ACOS": overall_acos,
         "广告订单占比": ad_order_share,
-        "CPC": _safe_divide(ad_spend, ad_clicks),
-        "CTR": _safe_divide(ad_clicks, ad_impressions),
+        "CPC": cpc,
+        "CTR": ctr,
+        "CVR": cvr,
+        "广告CVR": ad_cvr,
         "订单毛利润": gross_profit,
         "平均毛利率": avg_margin,
         "总库存/总供给": total_supply,
