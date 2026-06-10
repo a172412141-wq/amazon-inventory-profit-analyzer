@@ -81,6 +81,8 @@ FULL_SKU_COLUMNS = [
     "sku_ad_spend_share_in_parent",
     "sku_profit_share_in_parent",
     "sku_stock_share_in_parent",
+    "role_daily_sales",
+    "parent_avg_role_daily_sales",
     "parent_avg_sales_14d_units",
     "parent_avg_order_gross_margin",
     "final_action",

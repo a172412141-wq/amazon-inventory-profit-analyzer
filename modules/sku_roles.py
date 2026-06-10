@@ -30,6 +30,8 @@ ROLE_REPORT_COLUMNS = [
     "sku_ad_spend_share_in_parent",
     "sku_profit_share_in_parent",
     "sku_stock_share_in_parent",
+    "role_daily_sales",
+    "parent_avg_role_daily_sales",
     "parent_avg_sales_14d_units",
     "parent_avg_order_gross_margin",
     "sales_14d_units",
@@ -76,6 +78,14 @@ def _safe_share(values: pd.Series, totals: pd.Series) -> pd.Series:
     return values.div(totals.where(totals > 0)).fillna(0.0)
 
 
+def _role_daily_sales(df: pd.DataFrame, sales_14d_units: pd.Series) -> pd.Series:
+    daily_sales = _numeric(df, "current_daily_sales_units", np.nan)
+    if "current_daily_sales_units" not in df.columns:
+        daily_sales = pd.Series(np.nan, index=df.index, dtype="float64")
+    daily_sales = daily_sales.where(daily_sales.notna(), sales_14d_units / 14)
+    return daily_sales.fillna(0.0)
+
+
 def _role_parent_key(df: pd.DataFrame) -> pd.Series:
     parent = _text(df, "parent_asin")
     sku = _text(df, "sku")
@@ -101,15 +111,15 @@ def _candidate_labels(row: pd.Series) -> str:
 def _role_reason(row: pd.Series) -> str:
     sales_share = row.get("sku_sales_share_in_parent", 0.0)
     ad_share = row.get("sku_ad_spend_share_in_parent", 0.0)
-    sales_units = row.get("sales_14d_units", np.nan)
+    daily_sales = row.get("role_daily_sales", np.nan)
     margin = row.get("order_gross_margin", np.nan)
-    parent_avg_sales = row.get("parent_avg_sales_14d_units", np.nan)
+    parent_avg_daily_sales = row.get("parent_avg_role_daily_sales", np.nan)
     parent_avg_margin = row.get("parent_avg_order_gross_margin", np.nan)
     role = row.get("sku_role", "")
     candidates = row.get("sku_role_candidates", "")
     base = f"父体内广告花费占比 {ad_share:.2%}，销量占比 {sales_share:.2%}"
-    if not pd.isna(sales_units) and not pd.isna(parent_avg_sales):
-        base += f"，14天销量 {float(sales_units):.2f} / 父体平均 {float(parent_avg_sales):.2f}"
+    if not pd.isna(daily_sales) and not pd.isna(parent_avg_daily_sales):
+        base += f"，日均销量 {float(daily_sales):.2f} / 父体日均销量平均值 {float(parent_avg_daily_sales):.2f}"
     if not pd.isna(margin) and not pd.isna(parent_avg_margin):
         base += f"，毛利率 {float(margin):.2%} / 父体平均 {float(parent_avg_margin):.2%}"
 
@@ -145,6 +155,7 @@ def classify_sku_roles(df: pd.DataFrame, thresholds: dict[str, Any] | None = Non
     result["parent_sku_count"] = _text(result, "sku").groupby(role_parent_key).transform("nunique")
 
     sales_units = _numeric(result, "sales_14d_units")
+    daily_sales = _role_daily_sales(result, sales_units)
     sales_amount = _numeric(result, "sales_14d_amount")
     ad_spend = _numeric(result, "ad_spend")
     ad_impressions = _numeric(result, "ad_impressions")
@@ -161,6 +172,8 @@ def classify_sku_roles(df: pd.DataFrame, thresholds: dict[str, Any] | None = Non
     result["sku_click_share_in_parent"] = _safe_share(ad_clicks, ad_clicks.groupby(group).transform("sum"))
     result["sku_profit_share_in_parent"] = _safe_share(gross_profit.clip(lower=0), gross_profit.clip(lower=0).groupby(group).transform("sum"))
     result["sku_stock_share_in_parent"] = _safe_share(stock_qty, stock_qty.groupby(group).transform("sum"))
+    result["role_daily_sales"] = daily_sales
+    result["parent_avg_role_daily_sales"] = daily_sales.groupby(group).transform("mean")
     result["parent_avg_sales_14d_units"] = sales_units.groupby(group).transform("mean")
     result["parent_avg_order_gross_margin"] = margin.groupby(group).transform("mean")
 
@@ -168,11 +181,11 @@ def classify_sku_roles(df: pd.DataFrame, thresholds: dict[str, Any] | None = Non
     profit_margin_multiplier = _threshold(thresholds, ("sku_roles", "profit_margin_multiplier"), 1.50)
 
     ad_share = result["sku_ad_spend_share_in_parent"]
-    parent_avg_sales = result["parent_avg_sales_14d_units"]
+    parent_avg_daily_sales = result["parent_avg_role_daily_sales"]
     parent_avg_margin = result["parent_avg_order_gross_margin"]
 
     result["_traffic_candidate"] = ad_share > traffic_ad_share
-    result["_main_candidate"] = (sales_units > parent_avg_sales) & (margin > parent_avg_margin)
+    result["_main_candidate"] = (daily_sales > parent_avg_daily_sales) & (margin > parent_avg_margin)
     result["_profit_candidate"] = (
         parent_avg_margin.gt(0)
         & margin.ge(parent_avg_margin * profit_margin_multiplier)
