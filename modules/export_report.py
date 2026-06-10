@@ -70,12 +70,16 @@ def _sort_df(df: pd.DataFrame) -> pd.DataFrame:
         result["_action_sort"] = pd.Categorical(result["final_action"], categories=ACTION_ORDER, ordered=True)
         sort_columns.append("_action_sort")
         ascending.append(True)
-    if "stock_days" in result.columns:
+    if "available_stock_days" in result.columns:
+        result["_inventory_days_sort"] = pd.to_numeric(result["available_stock_days"], errors="coerce")
+        sort_columns.append("_inventory_days_sort")
+        ascending.append(False)
+    elif "stock_days" in result.columns:
         sort_columns.append("stock_days")
         ascending.append(False)
     if sort_columns:
         result = result.sort_values(sort_columns, ascending=ascending)
-    return result.drop(columns=[column for column in ["_priority_sort", "_action_sort"] if column in result.columns])
+    return result.drop(columns=[column for column in ["_priority_sort", "_action_sort", "_inventory_days_sort"] if column in result.columns])
 
 
 def _display_df(df: pd.DataFrame | None) -> pd.DataFrame:

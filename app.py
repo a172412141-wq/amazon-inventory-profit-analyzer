@@ -41,7 +41,7 @@ PERCENT_HINTS = (
 
 
 @st.cache_data(show_spinner=False)
-def load_configs() -> tuple[dict[str, Any], dict[str, Any]]:
+def load_configs(mapping_mtime: float, thresholds_mtime: float) -> tuple[dict[str, Any], dict[str, Any]]:
     return (
         load_yaml(CONFIG_DIR / "column_mapping.yaml"),
         load_yaml(CONFIG_DIR / "thresholds.yaml"),
@@ -181,6 +181,12 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
         ("总库存/总供给", False, False),
         ("可售库存天数", False, False),
         ("在途库存天数", False, False),
+        ("61-90天可售库存SKU数", False, False),
+        ("61-90天可售库存量", False, False),
+        ("91-180天可售库存SKU数", False, False),
+        ("91-180天可售库存量", False, False),
+        ("180天+可售库存SKU数", False, False),
+        ("180天+可售库存量", False, False),
         ("90天+库存占比", True, False),
         ("建议补货总量", False, False),
         ("清货风险 SKU 数", False, False),
@@ -221,7 +227,9 @@ def main() -> None:
     st.set_page_config(page_title="Amazon Inventory Profit Analyzer", layout="wide")
     st.title("amazon-inventory-profit-analyzer")
 
-    mapping_config, thresholds = load_configs()
+    mapping_path = CONFIG_DIR / "column_mapping.yaml"
+    thresholds_path = CONFIG_DIR / "thresholds.yaml"
+    mapping_config, thresholds = load_configs(mapping_path.stat().st_mtime, thresholds_path.stat().st_mtime)
     uploaded_file = st.file_uploader("上传数据", type=["xlsx", "xls"])
     if uploaded_file is None:
         return

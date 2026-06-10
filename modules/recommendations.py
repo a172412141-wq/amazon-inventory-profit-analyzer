@@ -47,12 +47,25 @@ def _is_true(value: Any) -> bool:
     return bool(value) if not pd.isna(value) else False
 
 
+def _inventory_days(row: pd.Series) -> float:
+    available_days = _num(row, "available_stock_days")
+    if not pd.isna(available_days):
+        return available_days
+    return _num(row, "stock_days", 0)
+
+
+def _inventory_days_series(df: pd.DataFrame) -> pd.Series:
+    stock_days = pd.to_numeric(df.get("stock_days", pd.Series(np.nan, index=df.index)), errors="coerce")
+    available_days = pd.to_numeric(df.get("available_stock_days", pd.Series(np.nan, index=df.index)), errors="coerce")
+    return available_days.where(available_days.notna(), stock_days)
+
+
 def _decision(final_action: str, priority: str, reason: str) -> dict[str, str]:
     return {"final_action": final_action, "priority": priority, "reason": reason}
 
 
 def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -> dict[str, str]:
-    stock_days = _num(row, "stock_days", 0)
+    stock_days = _inventory_days(row)
     main_daily_sales = _num(row, "main_daily_sales", 0)
     total_supply_qty = _num(row, "total_supply_qty", 0)
     recommended_qty = _num(row, "recommended_replenishment_qty", 0)
@@ -83,7 +96,7 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
 
     target_text = f"目标日销量需提升至约 {ideal_daily_units:.1f}" if not pd.isna(ideal_daily_units) else "需测算目标日销量"
 
-    # 1. 周转超红线 / 无销量压货
+    # 1. 可售库存周转超红线 / 无销量压货
     if (
         stock_days > urgent_redline_days
         or (main_daily_sales <= 0 and total_supply_qty > 0)
@@ -91,21 +104,21 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
         return _decision(
             "清货处理",
             "P0",
-            "库存天数超过 180 天超红线 / 无销量压货，现金流风险极高，建议紧急清货并停止补货。",
+            "可售库存天数超过 180 天超红线 / 无销量压货，现金流风险极高，建议紧急清货并停止补货。",
         )
 
-    # 2. 91-180 天红线库存，先按周转处理，再看利润。
+    # 2. 91-180 天红线可售库存，先按周转处理，再看利润。
     if stock_days > redline_days and not pd.isna(gross_profit) and gross_profit <= 0:
         return _decision(
             "清货处理",
             "P0",
-            f"库存天数超过 90 天红线，且订单毛利润为负，需 P0 处理；{target_text}，并停止补货。",
+            f"可售库存天数超过 90 天红线，且订单毛利润为负，需 P0 处理；{target_text}，并停止补货。",
         )
     if stock_days > redline_days:
         return _decision(
             "禁止补货",
             "P0",
-            f"库存天数处于 91-180 天红线，需 P0 控制周转；{target_text}，先停补并清理库存。",
+            f"可售库存天数处于 91-180 天红线，需 P0 控制周转；{target_text}，先停补并清理库存。",
         )
 
     # 3. 61-90 天需要加急周转，并重点看在途库存是否继续推高库存天数。
@@ -114,12 +127,12 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
             return _decision(
                 "加大投入加速周转",
                 "P1",
-                f"库存天数处于 61-90 天加急区间，毛利率和订单毛利润仍可支撑投入；{target_text}，需结合在途库存 {inbound_stock_days:.1f} 天加速周转。",
+                f"可售库存天数处于 61-90 天加急区间，毛利率和订单毛利润仍可支撑投入；{target_text}，需结合在途库存 {inbound_stock_days:.1f} 天加速周转。",
             )
         return _decision(
             "控补货促周转",
             "P1",
-            f"库存天数处于 61-90 天加急区间，需先控制补货并清理在途库存；{target_text}。",
+            f"可售库存天数处于 61-90 天加急区间，需先控制补货并清理在途库存；{target_text}。",
         )
 
     # 4. 库龄或在途压力
@@ -136,7 +149,7 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
             return _decision(
                 "立即补货",
                 "P0",
-                "可售天数低，存在严重缺货风险，且订单毛利润为正，建议立即补货，同时控广告防断货。",
+                "可售库存天数低，存在严重缺货风险，且订单毛利润为正，建议立即补货，同时控广告防断货。",
             )
         return _decision("控广告", "P2", "广告效率低于利润安全线，建议降低预算、暂停低效广告或重构投放。")
 
@@ -152,7 +165,7 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
         return _decision(
             "加大投入加速周转",
             "P2",
-            "毛利率较高，库存仍在健康可控区间，但周转偏慢。建议适度增加广告、优惠券或页面转化优化投入，把库存天数压回 60 天以内。",
+            "毛利率较高，可售库存仍在健康可控区间，但周转偏慢。建议适度增加广告、优惠券或页面转化优化投入，把可售库存天数压回 60 天以内。",
         )
 
     # 8. 立即补货
@@ -160,12 +173,12 @@ def recommend_action(row: pd.Series, thresholds: dict[str, Any] | None = None) -
         return _decision(
             "立即补货",
             "P0",
-            "可售天数低，存在严重缺货风险，且订单毛利润为正，建议立即补货。若广告消耗较高，需同步控广告防断货。",
+            "可售库存天数低，存在严重缺货风险，且订单毛利润为正，建议立即补货。若广告消耗较高，需同步控广告防断货。",
         )
 
     # 9. 优先补货
     if severe_stockout_days <= stock_days < stockout_warning_days and recommended_qty > 0 and not pd.isna(gross_profit) and gross_profit > 0:
-        return _decision("优先补货", "P1", "可售天数低于安全范围，订单毛利润为正，建议优先补货，广告不建议继续放大。")
+        return _decision("优先补货", "P1", "可售库存天数低于安全范围，订单毛利润为正，建议优先补货，广告不建议继续放大。")
 
     # 10. 正常补货
     if (
@@ -219,10 +232,13 @@ def sort_by_priority_action(df: pd.DataFrame) -> pd.DataFrame:
     else:
         result["_action_sort"] = len(ACTION_ORDER)
     sort_cols = ["_priority_sort", "_action_sort"]
-    if "stock_days" in result.columns:
+    if "available_stock_days" in result.columns:
+        result["_inventory_days_sort"] = pd.to_numeric(result["available_stock_days"], errors="coerce")
+        sort_cols.append("_inventory_days_sort")
+    elif "stock_days" in result.columns:
         sort_cols.append("stock_days")
     result = result.sort_values(sort_cols, ascending=[True, True, False] if len(sort_cols) == 3 else True)
-    return result.drop(columns=["_priority_sort", "_action_sort"])
+    return result.drop(columns=["_priority_sort", "_action_sort", "_inventory_days_sort"], errors="ignore")
 
 
 def _top_percent_mask(df: pd.DataFrame, column: str, top_percent: float) -> pd.Series:
@@ -254,7 +270,7 @@ def select_head_problem_skus(df: pd.DataFrame, thresholds: dict[str, Any] | None
         problems: list[str] = []
         margin = _num(row, "order_gross_margin")
         gross_profit = _num(row, "order_gross_profit")
-        stock_days = _num(row, "stock_days", 0)
+        stock_days = _inventory_days(row)
         acos = _num(row, "acos")
         if _is_true(top_masks["sales_14d_amount"].reindex(df.index).loc[row.name]) and not pd.isna(gross_profit) and gross_profit <= 0:
             problems.append("高销量但订单毛利润为负")
@@ -294,6 +310,8 @@ def select_head_problem_skus(df: pd.DataFrame, thresholds: dict[str, Any] | None
         "order_gross_profit",
         "order_gross_margin",
         "acos",
+        "available_stock_qty",
+        "available_stock_days",
         "stock_days",
         "recommended_replenishment_qty",
         "final_action",
@@ -312,7 +330,8 @@ def select_tail_abnormal_skus(df: pd.DataFrame, thresholds: dict[str, Any] | Non
         for idx in rows.index:
             abnormal.setdefault(idx, set()).add(label)
 
-    add_rows(df.sort_values("stock_days", ascending=False).head(n), "库存天数最高")
+    inventory_days = _inventory_days_series(df)
+    add_rows(df.assign(_inventory_days=inventory_days).sort_values("_inventory_days", ascending=False).head(n), "可售库存天数最高")
     add_rows(
         df[(pd.to_numeric(df.get("main_daily_sales"), errors="coerce") == 0) & (pd.to_numeric(df.get("total_supply_qty"), errors="coerce") > 0)]
         .sort_values("total_supply_qty", ascending=False)
@@ -339,6 +358,8 @@ def select_tail_abnormal_skus(df: pd.DataFrame, thresholds: dict[str, Any] | Non
         "sales_14d_units",
         "main_daily_sales",
         "total_supply_qty",
+        "available_stock_qty",
+        "available_stock_days",
         "stock_days",
         "aged_inventory_181_plus",
         "ad_spend",
@@ -358,14 +379,16 @@ def select_high_margin_slow_turnover(df: pd.DataFrame, thresholds: dict[str, Any
     acceleration_days = _threshold(thresholds, ("inventory", "acceleration_days"), 60)
     redline_days = _threshold(thresholds, ("inventory", "redline_days"), 90)
     urgent_redline_days = _threshold(thresholds, ("inventory", "urgent_redline_days"), 180)
-    selected = df[
-        (pd.to_numeric(df.get("order_gross_margin"), errors="coerce") >= high_margin)
-        & (pd.to_numeric(df.get("stock_days"), errors="coerce") >= acceleration_days)
-        & (pd.to_numeric(df.get("main_daily_sales"), errors="coerce") > 0)
+    source = df.copy()
+    source["_inventory_days"] = _inventory_days_series(source)
+    selected = source[
+        (pd.to_numeric(source.get("order_gross_margin"), errors="coerce") >= high_margin)
+        & (pd.to_numeric(source.get("_inventory_days"), errors="coerce") >= acceleration_days)
+        & (pd.to_numeric(source.get("main_daily_sales"), errors="coerce") > 0)
     ].copy()
 
     def investment(row: pd.Series) -> str:
-        stock_days = _num(row, "stock_days", 0)
+        stock_days = _inventory_days(row)
         gross_profit = _num(row, "order_gross_profit")
         if acceleration_days <= stock_days <= redline_days and not pd.isna(gross_profit) and gross_profit > 0:
             return "加大投入加速周转"
@@ -383,6 +406,8 @@ def select_high_margin_slow_turnover(df: pd.DataFrame, thresholds: dict[str, Any
         "product_line",
         "order_gross_profit",
         "order_gross_margin",
+        "available_stock_qty",
+        "available_stock_days",
         "stock_days",
         "turnover_level",
         "cashflow_risk_level",
@@ -400,10 +425,11 @@ def select_high_margin_slow_turnover(df: pd.DataFrame, thresholds: dict[str, Any
 
 
 def select_urgent_replenishment(df: pd.DataFrame) -> pd.DataFrame:
+    inventory_days = _inventory_days_series(df)
     selected = df[
         df.get("final_action").isin(["立即补货", "优先补货"])
         | (
-            (pd.to_numeric(df.get("stock_days"), errors="coerce") < 30)
+            (inventory_days < 30)
             & (pd.to_numeric(df.get("recommended_replenishment_qty"), errors="coerce") > 0)
         )
     ].copy()
@@ -412,6 +438,8 @@ def select_urgent_replenishment(df: pd.DataFrame) -> pd.DataFrame:
         "parent_asin",
         "spu",
         "product_line",
+        "available_stock_qty",
+        "available_stock_days",
         "stock_days",
         "total_supply_qty",
         "available_qty",
@@ -432,9 +460,10 @@ def select_urgent_replenishment(df: pd.DataFrame) -> pd.DataFrame:
 
 def select_clearance_stop(df: pd.DataFrame, thresholds: dict[str, Any] | None = None) -> pd.DataFrame:
     urgent_redline_days = _threshold(thresholds, ("inventory", "urgent_redline_days"), 180)
+    inventory_days = _inventory_days_series(df)
     selected = df[
         df.get("final_action").isin(["清货处理", "禁止补货", "高毛利停补"])
-        | (pd.to_numeric(df.get("stock_days"), errors="coerce") > urgent_redline_days)
+        | (inventory_days > urgent_redline_days)
         | (
             (pd.to_numeric(df.get("main_daily_sales"), errors="coerce") <= 0)
             & (pd.to_numeric(df.get("total_supply_qty"), errors="coerce") > 0)
@@ -445,6 +474,8 @@ def select_clearance_stop(df: pd.DataFrame, thresholds: dict[str, Any] | None = 
         "parent_asin",
         "spu",
         "product_line",
+        "available_stock_qty",
+        "available_stock_days",
         "stock_days",
         "total_supply_qty",
         "available_qty",
@@ -491,6 +522,7 @@ def select_ad_optimization(df: pd.DataFrame) -> pd.DataFrame:
         "order_gross_margin",
         "sales_7d_amount",
         "sales_14d_amount",
+        "available_stock_days",
         "stock_days",
         "final_action",
         "priority",

@@ -3,7 +3,7 @@ import pandas as pd
 from modules.validation import validate_data
 
 
-def test_validation_reports_inventory_and_margin_mismatches():
+def test_validation_reports_inventory_mismatches_without_margin_period_guess():
     df = pd.DataFrame(
         {
             "sku": ["A"],
@@ -29,4 +29,4 @@ def test_validation_reports_inventory_and_margin_mismatches():
 
     assert "库存信息不匹配" in errors["error_type"].tolist()
     assert "库存天数口径不一致" in errors["error_type"].tolist()
-    assert "毛利率不匹配" in errors["error_type"].tolist()
+    assert "毛利率不匹配" not in errors["error_type"].tolist()

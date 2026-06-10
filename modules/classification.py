@@ -25,6 +25,13 @@ def _num(row: pd.Series, column: str, default: float = np.nan) -> float:
         return default
 
 
+def _inventory_days(row: pd.Series) -> float:
+    available_days = _num(row, "available_stock_days")
+    if not pd.isna(available_days):
+        return available_days
+    return _num(row, "stock_days")
+
+
 def _margin_level(value: float, thresholds: dict[str, Any] | None) -> str:
     high = _get_threshold(thresholds, ("margin", "high_margin"), 0.15)
     medium = _get_threshold(thresholds, ("margin", "medium_margin"), 0.08)
@@ -44,7 +51,7 @@ def _margin_level(value: float, thresholds: dict[str, Any] | None) -> str:
 
 
 def _turnover_level(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
-    stock_days = _num(row, "stock_days")
+    stock_days = _inventory_days(row)
     main_daily_sales = _num(row, "main_daily_sales", 0)
     total_supply_qty = _num(row, "total_supply_qty", 0)
 
@@ -64,7 +71,7 @@ def _turnover_level(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
 
 
 def _inventory_status(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
-    stock_days = _num(row, "stock_days")
+    stock_days = _inventory_days(row)
     main_daily_sales = _num(row, "main_daily_sales", 0)
     total_supply_qty = _num(row, "total_supply_qty", 0)
 
@@ -114,7 +121,7 @@ def _ad_status(row: pd.Series) -> str:
 
 
 def _cashflow_risk(row: pd.Series, thresholds: dict[str, Any] | None) -> str:
-    stock_days = _num(row, "stock_days")
+    stock_days = _inventory_days(row)
     gross_profit = _num(row, "order_gross_profit")
     main_daily_sales = _num(row, "main_daily_sales", 0)
     total_supply_qty = _num(row, "total_supply_qty", 0)

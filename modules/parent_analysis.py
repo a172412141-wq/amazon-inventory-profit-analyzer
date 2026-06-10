@@ -133,6 +133,7 @@ def analyze_parent(df: pd.DataFrame, thresholds: dict | None = None) -> tuple[pd
         "sales_7d_amount",
         "sales_14d_amount",
         "total_supply_qty",
+        "available_stock_qty",
         "available_qty",
         "inbound_qty",
         "recommended_replenishment_qty",

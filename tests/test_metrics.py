@@ -113,4 +113,4 @@ def test_ad_and_inventory_metrics_are_calculated():
     assert result.loc[0, "ad_order_share"] == 0.25
     assert result.loc[0, "available_stock_days"] == 60
     assert result.loc[0, "inbound_stock_days"] == 30
-    assert result.loc[0, "ideal_turnover_daily_units"] == 2
+    assert result.loc[0, "ideal_turnover_daily_units"] == 120 / 90

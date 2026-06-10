@@ -63,7 +63,6 @@ def _sort_errors(errors: pd.DataFrame) -> pd.DataFrame:
     type_order = [
         "库存信息不匹配",
         "库存天数口径不一致",
-        "毛利率不匹配",
         "毛利率 > 100%",
         "毛利率 < -50%",
         "缺少必填字段",
@@ -155,20 +154,6 @@ def validate_data(
     for idx in df.index[margin < -0.5]:
         _add_error(errors, sku_series.loc[idx], "毛利率 < -50%", "高", f"毛利率为 {_fmt_pct(margin.loc[idx])}，低于 -50%，需复核成本或利润数据。")
 
-    if _source_exists(mapping_report, "sales_7d_amount") and _source_exists(mapping_report, "order_gross_profit"):
-        implied_margin = gross_profit / sales_7d_amount.replace(0, np.nan)
-        margin_diff = (implied_margin - margin).abs()
-        for idx in df.index[(sales_7d_amount > 0) & margin.notna() & implied_margin.notna() & (margin_diff > 0.05)]:
-            _add_error(
-                errors,
-                sku_series.loc[idx],
-                "毛利率不匹配",
-                "高",
-                "订单毛利润 / 7天销售额推算毛利率为 "
-                f"{_fmt_pct(implied_margin.loc[idx])}，表内毛利率为 {_fmt_pct(margin.loc[idx])}，"
-                f"差异 {_fmt_pct(margin_diff.loc[idx])}，请核对毛利润、销售额或毛利率字段。",
-            )
-
     if _source_exists(mapping_report, "total_supply_qty") and _source_exists(mapping_report, "available_qty"):
         for idx in df.index[available > total_supply]:
             _add_error(
@@ -225,12 +210,15 @@ def validate_data(
             )
 
     if _source_exists(mapping_report, "stock_days") and _source_exists(mapping_report, "available_qty"):
+        stock_day_diff = (available_stock_days - stock_days).abs()
+        stock_day_rel_diff = stock_day_diff / stock_days.abs().replace(0, np.nan)
         mismatch = (
             available_stock_days.notna()
             & stock_days.notna()
             & available_stock_days.map(np.isfinite)
             & stock_days.map(np.isfinite)
-            & (available_stock_days > stock_days + 5)
+            & (stock_day_diff > 30)
+            & (stock_day_rel_diff > 0.35)
         )
         for idx in df.index[mismatch]:
             _add_error(
@@ -238,7 +226,8 @@ def validate_data(
                 sku_series.loc[idx],
                 "库存天数口径不一致",
                 "中",
-                f"可售库存天数 {_fmt(available_stock_days.loc[idx])} 高于表内库存天数 {_fmt(stock_days.loc[idx])}，请核对可售库存和总库存口径。",
+                f"按可售库存 / 7天平均日销量计算的可售库存天数为 {_fmt(available_stock_days.loc[idx])}，"
+                f"表内库存天数为 {_fmt(stock_days.loc[idx])}，差异 {_fmt(stock_day_diff.loc[idx])} 天，请核对可售库存、在途库存和库存天数字段口径。",
             )
 
     for idx in df.index[stock_days < 0]:

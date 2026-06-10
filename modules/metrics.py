@@ -37,7 +37,6 @@ def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.Da
     total_supply_qty = _series(result, "total_supply_qty")
     available_qty = _series(result, "available_qty", np.nan)
     inbound_qty = _series(result, "inbound_qty")
-    stock_days = _series(result, "stock_days", np.nan)
     ad_spend = _series(result, "ad_spend")
     ad_sales = _series(result, "ad_sales")
     ad_impressions = _series(result, "ad_impressions")
@@ -82,24 +81,33 @@ def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.Da
         total_supply_qty / result["main_daily_sales"],
     )
 
-    available_stock_qty = available_qty.where(available_qty > 0, total_supply_qty - inbound_qty).clip(lower=0)
+    available_missing = result.get(
+        "_missing_available_qty",
+        pd.Series(False, index=result.index),
+    ).fillna(False).astype(bool)
+    available_fallback = (total_supply_qty.fillna(0.0) - inbound_qty.fillna(0.0)).clip(lower=0)
+    available_stock_qty = available_qty.where(~available_missing, available_fallback)
+    available_stock_qty = available_stock_qty.where(available_stock_qty.notna(), available_fallback).clip(lower=0)
+    result["available_stock_qty"] = available_stock_qty
+
+    avg_sales_7d = result["avg_sales_7d"]
     result["available_stock_days"] = np.where(
-        result["main_daily_sales"] <= 0,
-        np.inf,
-        available_stock_qty.fillna(0.0) / result["main_daily_sales"],
+        avg_sales_7d > 0,
+        available_stock_qty / avg_sales_7d,
+        np.where(available_stock_qty > 0, np.inf, 0.0),
     )
     result["inbound_stock_days"] = np.where(
-        result["main_daily_sales"] <= 0,
-        np.inf,
-        inbound_qty.fillna(0.0) / result["main_daily_sales"],
+        avg_sales_7d > 0,
+        inbound_qty.fillna(0.0) / avg_sales_7d,
+        np.where(inbound_qty.fillna(0.0) > 0, np.inf, 0.0),
     )
     result["ideal_turnover_daily_units"] = np.where(
         ideal_turnover_days > 0,
-        total_supply_qty / ideal_turnover_days,
+        available_stock_qty / ideal_turnover_days,
         np.nan,
     )
-    result["over_90_stock_qty"] = (total_supply_qty - result["main_daily_sales"] * ideal_turnover_days).clip(lower=0)
-    result["over_90_inventory_ratio"] = _safe_divide(result["over_90_stock_qty"], total_supply_qty)
+    result["over_90_stock_qty"] = (available_stock_qty - avg_sales_7d * ideal_turnover_days).clip(lower=0)
+    result["over_90_inventory_ratio"] = _safe_divide(result["over_90_stock_qty"], available_stock_qty)
     calculated_cpc = _safe_divide(ad_spend, ad_clicks)
     result["cpc"] = cpc_input.where(cpc_input.notna(), calculated_cpc)
     result["ctr"] = ctr_input.where(ctr_input.notna(), _safe_divide(ad_clicks, ad_impressions))

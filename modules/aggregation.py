@@ -13,6 +13,7 @@ SUM_FIELDS = [
     "sales_14d_amount",
     "total_supply_qty",
     "available_qty",
+    "available_stock_qty",
     "inbound_qty",
     "recommended_replenishment_qty",
     "ad_spend",
@@ -87,12 +88,12 @@ def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | 
                 continue
             row[field] = _sum(group, field)
 
-        main_daily_sales_sum = _sum(group, "main_daily_sales")
-        total_supply = row.get("total_supply_qty", 0.0)
+        avg_sales_7d_sum = row.get("sales_7d_units", 0.0) / 7
+        available_stock = row.get("available_stock_qty", row.get("available_qty", 0.0))
         row["weighted_stock_days"] = (
-            total_supply / main_daily_sales_sum
-            if main_daily_sales_sum > 0
-            else (np.inf if total_supply > 0 else np.nan)
+            available_stock / avg_sales_7d_sum
+            if avg_sales_7d_sum > 0
+            else (np.inf if available_stock > 0 else np.nan)
         )
 
         ad_sales = row.get("ad_sales", 0.0)

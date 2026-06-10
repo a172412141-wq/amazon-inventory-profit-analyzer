@@ -297,6 +297,7 @@ quantity_fields:
   - recommended_replenishment_qty
   - total_supply_qty
   - available_qty
+  - available_stock_qty
   - inbound_qty
   - sales_7d_units
   - sales_14d_units
