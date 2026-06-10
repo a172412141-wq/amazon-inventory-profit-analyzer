@@ -6,7 +6,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from modules.export_report import export_analysis_report
@@ -17,6 +16,7 @@ from modules.product_line_analysis import analyze_product_lines
 from modules.sku_roles import build_sku_role_reports
 from modules.spu_analysis import analyze_spu
 from modules.validation import get_missing_required_fields
+from visualizations import NAV_ITEMS, render_visualizations
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -199,20 +199,6 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
 
     st.markdown(summary.replace("\n", "\n\n"))
 
-    chart_cols = st.columns(2)
-    if "final_action" in full_sku.columns and not full_sku.empty:
-        action_counts = full_sku["final_action"].value_counts().reset_index()
-        action_counts.columns = ["final_action", "sku_count"]
-        fig = px.bar(action_counts, x="final_action", y="sku_count", text="sku_count")
-        fig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10))
-        chart_cols[0].plotly_chart(fig, use_container_width=True)
-    if "sku_role" in full_sku.columns and not full_sku.empty:
-        role_counts = full_sku["sku_role"].value_counts().reset_index()
-        role_counts.columns = ["sku_role", "sku_count"]
-        fig = px.pie(role_counts, names="sku_role", values="sku_count", hole=0.45)
-        fig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10))
-        chart_cols[1].plotly_chart(fig, use_container_width=True)
-
 
 def _render_table(df: pd.DataFrame, height: int = 520) -> None:
     st.caption(f"{len(df):,} 行")
@@ -284,41 +270,37 @@ def main() -> None:
         thresholds,
     )
 
-    tabs = st.tabs(
-        [
-            "总览 Dashboard",
-            "引流 SKU",
-            "主力 SKU",
-            "利润 SKU",
-            "低效异常 SKU",
-            "父体分析",
-            "SPU / 品线分析",
-            "SKU 完整判断",
-            "数据异常",
-            "导出 Excel",
-        ]
-    )
+    tabs = st.tabs(NAV_ITEMS)
 
     with tabs[0]:
         _render_dashboard(report_tables["full_sku"], overview_metrics, overview_summary)
+        render_visualizations("总览 Dashboard", report_tables)
     with tabs[1]:
         _render_table(report_tables["traffic_skus"])
+        render_visualizations("引流 SKU", report_tables)
     with tabs[2]:
         _render_table(report_tables["main_skus"])
+        render_visualizations("主力 SKU", report_tables)
     with tabs[3]:
         _render_table(report_tables["profit_skus"])
+        render_visualizations("利润 SKU", report_tables)
     with tabs[4]:
         _render_table(report_tables["low_efficiency_skus"])
+        render_visualizations("低效异常 SKU", report_tables)
     with tabs[5]:
         _render_table(report_tables["parent_analysis"], height=420)
         _render_table(report_tables["parent_structure_anomalies"], height=360)
+        render_visualizations("父体分析", report_tables)
     with tabs[6]:
         _render_table(report_tables["spu_analysis"], height=420)
         _render_table(report_tables["product_line_analysis"], height=420)
+        render_visualizations("SPU / 品线分析", report_tables)
     with tabs[7]:
         _render_table(report_tables["full_sku"])
+        render_visualizations("SKU 完整判断", report_tables)
     with tabs[8]:
         _render_table(report_tables["data_errors"])
+        render_visualizations("数据异常", report_tables)
     with tabs[9]:
         export_bytes = export_analysis_report(report_tables)
         filename = f"amazon_inventory_profit_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -332,6 +314,7 @@ def main() -> None:
             output_path = OUTPUT_DIR / filename
             export_analysis_report(report_tables, output_path)
             st.success(f"已保存：{output_path}")
+        render_visualizations("导出 Excel", report_tables)
 
 
 if __name__ == "__main__":
