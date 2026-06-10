@@ -154,6 +154,18 @@ fields:
       - 广告成交量
       - ad_orders
       - Ad Orders
+  total_orders:
+    aliases:
+      - 总订单
+      - 总订单数
+      - 订单总数
+      - 总订单量
+      - 14天订单商品总数
+      - 14天订单商品数
+      - 14天订单数
+      - 14天订单
+      - total_orders
+      - Total Orders
   cpc:
     aliases:
       - CPC
@@ -248,6 +260,7 @@ numeric_fields:
   - ad_impressions
   - ad_clicks
   - ad_orders
+  - total_orders
   - cpc
   - ctr
   - ad_cvr
@@ -278,6 +291,7 @@ zero_fill_fields:
   - sales_14d_amount
   - ad_spend
   - ad_sales
+  - total_orders
   - aged_inventory_181_plus
   - inventory_value
 
@@ -301,6 +315,7 @@ quantity_fields:
   - inbound_qty
   - sales_7d_units
   - sales_14d_units
+  - total_orders
   - avg_sales_7d
   - avg_sales_14d
   - main_daily_sales

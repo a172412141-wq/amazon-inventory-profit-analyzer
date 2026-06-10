@@ -42,6 +42,7 @@ def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.Da
     ad_impressions = _series(result, "ad_impressions")
     ad_clicks = _series(result, "ad_clicks")
     ad_orders = _series(result, "ad_orders")
+    total_orders_input = _series(result, "total_orders", np.nan)
     cpc_input = _series(result, "cpc", np.nan)
     ctr_input = _series(result, "ctr", np.nan)
     ad_cvr_input = _series(result, "ad_cvr", np.nan)
@@ -74,6 +75,7 @@ def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.Da
         sales_7d_amount / 7,
         sales_14d_amount / 14,
     )
+    result["total_orders"] = total_orders_input.where(total_orders_input > 0, sales_14d_units)
 
     result["calculated_stock_days"] = np.where(
         result["main_daily_sales"] <= 0,
@@ -115,9 +117,7 @@ def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.Da
     calculated_cvr = _safe_divide(sales_14d_units, sessions_14d)
     calculated_cvr = calculated_cvr.where(calculated_cvr.notna(), _safe_divide(sales_7d_units, sessions_7d))
     result["cvr"] = cvr_input.where(cvr_input.notna(), calculated_cvr)
-    result["ad_order_share"] = _safe_divide(ad_orders, sales_14d_units)
-    amount_share = _safe_divide(ad_sales, sales_14d_amount)
-    result["ad_order_share"] = result["ad_order_share"].where(result["ad_order_share"].notna(), amount_share)
+    result["ad_order_share"] = _safe_divide(ad_orders, result["total_orders"])
 
     result["break_even_acos"] = order_gross_margin
     result["ad_no_conversion_flag"] = (ad_spend > 0) & (ad_sales <= 0)

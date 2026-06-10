@@ -53,6 +53,7 @@ FULL_SKU_COLUMNS = [
     "ad_impressions",
     "ad_clicks",
     "ad_orders",
+    "total_orders",
     "sessions_7d",
     "sessions_14d",
     "acos",
@@ -93,6 +94,16 @@ def _mean(df: pd.DataFrame, column: str) -> float:
         return np.nan
     value = pd.to_numeric(df[column], errors="coerce").mean()
     return float(value) if not pd.isna(value) else np.nan
+
+
+def _use_source_ratio_when_needed(calculated: float, source_average: float) -> float:
+    if pd.isna(source_average):
+        return calculated
+    if pd.isna(calculated):
+        return source_average
+    if calculated == 0 and source_average > 0:
+        return source_average
+    return calculated
 
 
 def _nunique(df: pd.DataFrame, column: str) -> int:
@@ -139,8 +150,11 @@ def build_overview(
     ad_clicks = _sum(full_sku, "ad_clicks")
     ad_impressions = _sum(full_sku, "ad_impressions")
     ad_orders = _sum(full_sku, "ad_orders")
+    total_orders = _sum(full_sku, "total_orders")
     sessions_14d = _sum(full_sku, "sessions_14d")
     sales_14d_units = _sum(full_sku, "sales_14d_units")
+    if total_orders <= 0:
+        total_orders = sales_14d_units
     sales_7d_units = _sum(full_sku, "sales_7d_units")
     sales_14d_amount = _sum(full_sku, "sales_14d_amount")
     sales_7d_amount = _sum(full_sku, "sales_7d_amount")
@@ -159,9 +173,7 @@ def build_overview(
     ideal_turnover_daily_units = _sum(full_sku, "ideal_turnover_daily_units")
     over_90_inventory_ratio = _safe_divide(_sum(full_sku, "over_90_stock_qty"), available_stock_qty)
     max_over_90_ratio = _threshold(thresholds, ("inventory", "max_over_90_inventory_ratio"), 0.25)
-    ad_order_share = _safe_divide(ad_orders, sales_14d_units) if ad_orders > 0 else np.nan
-    if pd.isna(ad_order_share):
-        ad_order_share = _safe_divide(ad_sales, sales_14d_amount)
+    ad_order_share = _safe_divide(ad_orders, total_orders)
     cpc = _safe_divide(ad_spend, ad_clicks)
     if pd.isna(cpc):
         cpc = _mean(full_sku, "cpc")
@@ -169,11 +181,9 @@ def build_overview(
     if pd.isna(ctr):
         ctr = _mean(full_sku, "ctr")
     cvr = _safe_divide(sales_14d_units, sessions_14d)
-    if pd.isna(cvr):
-        cvr = _mean(full_sku, "cvr")
+    cvr = _use_source_ratio_when_needed(cvr, _mean(full_sku, "cvr"))
     ad_cvr = _safe_divide(ad_orders, ad_clicks)
-    if pd.isna(ad_cvr):
-        ad_cvr = _mean(full_sku, "ad_cvr")
+    ad_cvr = _use_source_ratio_when_needed(ad_cvr, _mean(full_sku, "ad_cvr"))
 
     high_margin_slow_count = len(focus_reports.get("high_margin_slow_turnover", pd.DataFrame()))
     clearance_count = int(full_sku.get("final_action", pd.Series(dtype=str)).isin(["清货处理", "禁止补货", "高毛利停补"]).sum())
@@ -187,6 +197,9 @@ def build_overview(
     urgent_redline_mask = finite_available_days > 180
     no_sales_stock_mask = available_days.map(np.isposinf) & (available_qty_series > 0)
     urgent_redline_mask = urgent_redline_mask | no_sales_stock_mask
+    warning_qty = float(available_qty_series[warning_mask].sum())
+    redline_qty = float(available_qty_series[redline_mask].sum())
+    urgent_redline_qty = float(available_qty_series[urgent_redline_mask].sum())
 
     metrics = {
         "SKU 总数": sku_count,
@@ -211,12 +224,9 @@ def build_overview(
         "总库存/总供给": total_supply,
         "可售库存天数": _safe_divide(available_stock_qty, avg_sales_7d_total),
         "在途库存天数": _safe_divide(inbound_qty, avg_sales_7d_total),
-        "61-90天可售库存SKU数": int(warning_mask.sum()),
-        "61-90天可售库存量": float(available_qty_series[warning_mask].sum()),
-        "91-180天可售库存SKU数": int(redline_mask.sum()),
-        "91-180天可售库存量": float(available_qty_series[redline_mask].sum()),
-        "180天+可售库存SKU数": int(urgent_redline_mask.sum()),
-        "180天+可售库存量": float(available_qty_series[urgent_redline_mask].sum()),
+        "61-90天可售库存量": warning_qty,
+        "91-180天可售库存量": redline_qty,
+        "180天+可售库存量": urgent_redline_qty,
         "90天+库存占比": over_90_inventory_ratio,
         "建议补货总量": _sum(full_sku, "recommended_replenishment_qty"),
         "清货风险 SKU 数": int((full_sku.get("final_action", pd.Series(dtype=str)) == "清货处理").sum()),
@@ -233,8 +243,7 @@ def build_overview(
         f"{metrics['品线数']} 条品线。\n"
         f"当前主要问题：\n"
         f"1. 高毛利慢周转 SKU 有 {high_margin_slow_count} 个，说明部分利润被库存占用，需加速周转。\n"
-        f"2. 91-180 天红线可售库存 SKU 有 {metrics['91-180天可售库存SKU数']} 个，"
-        f"对应可售库存 {metrics['91-180天可售库存量']:,.1f} 件，需 P0 处理周转。\n"
+        f"2. 91-180 天红线可售库存量为 {redline_qty:,.1f} 件，需 P0 处理周转。\n"
         f"3. 清货/停补 SKU 有 {clearance_count} 个，说明库存现金流风险较高。\n"
         f"4. 90天+库存占比为 {_format_ratio(over_90_inventory_ratio)}，理想状态应低于 {max_over_90_ratio:.0%}，"
         f"需围绕目标日销量 {ideal_turnover_daily_units:,.1f} 加速周转。\n"

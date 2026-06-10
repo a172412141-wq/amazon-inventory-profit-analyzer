@@ -95,6 +95,7 @@ def test_ad_and_inventory_metrics_are_calculated():
             "ad_impressions": [1000],
             "ad_clicks": [100],
             "ad_orders": [7],
+            "total_orders": [20],
             "ctr": [pd.NA],
             "ad_cvr": [pd.NA],
             "cvr": [pd.NA],
@@ -110,7 +111,24 @@ def test_ad_and_inventory_metrics_are_calculated():
     assert result.loc[0, "ctr"] == 0.1
     assert result.loc[0, "ad_cvr"] == 0.07
     assert result.loc[0, "cvr"] == 0.07
-    assert result.loc[0, "ad_order_share"] == 0.25
+    assert result.loc[0, "ad_order_share"] == 0.35
     assert result.loc[0, "available_stock_days"] == 60
     assert result.loc[0, "inbound_stock_days"] == 30
     assert result.loc[0, "ideal_turnover_daily_units"] == 120 / 90
+
+
+def test_ad_order_share_falls_back_to_14d_units_when_total_orders_missing():
+    df = pd.DataFrame(
+        {
+            "sales_7d_units": [7],
+            "sales_14d_units": [28],
+            "predicted_daily_sales": [1],
+            "total_supply_qty": [90],
+            "ad_orders": [7],
+        }
+    )
+
+    result = calculate_metrics(df)
+
+    assert result.loc[0, "total_orders"] == 28
+    assert result.loc[0, "ad_order_share"] == 0.25
