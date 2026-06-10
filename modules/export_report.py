@@ -12,18 +12,16 @@ from .recommendations import ACTION_ORDER, PRIORITY_ORDER
 
 SHEET_ORDER = [
     ("01_总览", "overview"),
-    ("02_头部重点问题SKU", "head_problem_skus"),
-    ("03_尾部异常SKU", "tail_abnormal_skus"),
-    ("04_高毛利慢周转SKU", "high_margin_slow_turnover"),
-    ("05_紧急补货SKU", "urgent_replenishment"),
-    ("06_清货停补SKU", "clearance_stop"),
-    ("07_广告优化SKU", "ad_optimization"),
-    ("08_SKU完整判断", "full_sku"),
-    ("09_父体分析", "parent_analysis"),
-    ("10_父体结构异常", "parent_structure_anomalies"),
-    ("11_SPU分析", "spu_analysis"),
-    ("12_品线分析", "product_line_analysis"),
-    ("13_数据异常", "data_errors"),
+    ("02_引流SKU", "traffic_skus"),
+    ("03_主力SKU", "main_skus"),
+    ("04_利润SKU", "profit_skus"),
+    ("05_低效异常SKU", "low_efficiency_skus"),
+    ("06_SKU完整判断", "full_sku"),
+    ("07_父体分析", "parent_analysis"),
+    ("08_父体结构异常", "parent_structure_anomalies"),
+    ("09_SPU分析", "spu_analysis"),
+    ("10_品线分析", "product_line_analysis"),
+    ("11_数据异常", "data_errors"),
 ]
 
 PERCENT_HINTS = (

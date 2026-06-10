@@ -14,7 +14,7 @@ from modules.loader import get_sheet_summaries, load_mapped_sheet, load_yaml
 from modules.parent_analysis import analyze_parent
 from modules.pipeline import build_overview, prepare_full_sku_table, run_analysis
 from modules.product_line_analysis import analyze_product_lines
-from modules.recommendations import build_focus_reports
+from modules.sku_roles import build_sku_role_reports
 from modules.spu_analysis import analyze_spu
 from modules.validation import get_missing_required_fields
 
@@ -132,21 +132,19 @@ def _build_filtered_tables(
     data_errors: pd.DataFrame,
     thresholds: dict[str, Any],
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Any], str]:
-    focus = build_focus_reports(full, thresholds)
+    role_reports = build_sku_role_reports(full)
     parent_analysis, parent_structure = analyze_parent(full, thresholds)
     spu_analysis = analyze_spu(full, thresholds)
     product_line_analysis = analyze_product_lines(full, thresholds)
     full_sku = prepare_full_sku_table(full)
-    metrics, summary, overview = build_overview(full_sku, focus, thresholds)
+    metrics, summary, overview = build_overview(full_sku, role_reports, thresholds)
     visible_skus = set(full_sku["sku"].astype(str)) if "sku" in full_sku.columns else set()
     tables = {
         "overview": overview,
-        "head_problem_skus": focus["head_problem_skus"],
-        "tail_abnormal_skus": focus["tail_abnormal_skus"],
-        "high_margin_slow_turnover": focus["high_margin_slow_turnover"],
-        "urgent_replenishment": focus["urgent_replenishment"],
-        "clearance_stop": focus["clearance_stop"],
-        "ad_optimization": focus["ad_optimization"],
+        "traffic_skus": role_reports["traffic_skus"],
+        "main_skus": role_reports["main_skus"],
+        "profit_skus": role_reports["profit_skus"],
+        "low_efficiency_skus": role_reports["low_efficiency_skus"],
         "full_sku": full_sku,
         "parent_analysis": parent_analysis,
         "parent_structure_anomalies": parent_structure,
@@ -188,9 +186,11 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
         ("建议补货总量", False, False),
         ("清货风险 SKU 数", False, False),
         ("禁止补货 SKU 数", False, False),
-        ("高毛利慢周转 SKU 数", False, False),
         ("立即补货 SKU 数", False, False),
-        ("广告优化 SKU 数", False, False),
+        ("引流 SKU 数", False, False),
+        ("主力 SKU 数", False, False),
+        ("利润 SKU 数", False, False),
+        ("低效异常 SKU 数", False, False),
     ]
     for start in range(0, len(metric_specs), 4):
         cols = st.columns(4)
@@ -206,10 +206,10 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
         fig = px.bar(action_counts, x="final_action", y="sku_count", text="sku_count")
         fig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10))
         chart_cols[0].plotly_chart(fig, use_container_width=True)
-    if "cashflow_risk_level" in full_sku.columns and not full_sku.empty:
-        risk_counts = full_sku["cashflow_risk_level"].value_counts().reset_index()
-        risk_counts.columns = ["cashflow_risk_level", "sku_count"]
-        fig = px.pie(risk_counts, names="cashflow_risk_level", values="sku_count", hole=0.45)
+    if "sku_role" in full_sku.columns and not full_sku.empty:
+        role_counts = full_sku["sku_role"].value_counts().reset_index()
+        role_counts.columns = ["sku_role", "sku_count"]
+        fig = px.pie(role_counts, names="sku_role", values="sku_count", hole=0.45)
         fig.update_layout(height=320, margin=dict(l=10, r=10, t=20, b=10))
         chart_cols[1].plotly_chart(fig, use_container_width=True)
 
@@ -263,6 +263,7 @@ def main() -> None:
             "parent_asin",
             "spu",
             "product_line",
+            "sku_role",
             "final_action",
             "priority",
             "inventory_status",
@@ -286,12 +287,10 @@ def main() -> None:
     tabs = st.tabs(
         [
             "总览 Dashboard",
-            "头部重点问题 SKU",
-            "尾部异常 SKU",
-            "高毛利慢周转 SKU",
-            "紧急补货 SKU",
-            "清货停补 SKU",
-            "广告优化 SKU",
+            "引流 SKU",
+            "主力 SKU",
+            "利润 SKU",
+            "低效异常 SKU",
             "父体分析",
             "SPU / 品线分析",
             "SKU 完整判断",
@@ -303,28 +302,24 @@ def main() -> None:
     with tabs[0]:
         _render_dashboard(report_tables["full_sku"], overview_metrics, overview_summary)
     with tabs[1]:
-        _render_table(report_tables["head_problem_skus"])
+        _render_table(report_tables["traffic_skus"])
     with tabs[2]:
-        _render_table(report_tables["tail_abnormal_skus"])
+        _render_table(report_tables["main_skus"])
     with tabs[3]:
-        _render_table(report_tables["high_margin_slow_turnover"])
+        _render_table(report_tables["profit_skus"])
     with tabs[4]:
-        _render_table(report_tables["urgent_replenishment"])
+        _render_table(report_tables["low_efficiency_skus"])
     with tabs[5]:
-        _render_table(report_tables["clearance_stop"])
-    with tabs[6]:
-        _render_table(report_tables["ad_optimization"])
-    with tabs[7]:
         _render_table(report_tables["parent_analysis"], height=420)
         _render_table(report_tables["parent_structure_anomalies"], height=360)
-    with tabs[8]:
+    with tabs[6]:
         _render_table(report_tables["spu_analysis"], height=420)
         _render_table(report_tables["product_line_analysis"], height=420)
-    with tabs[9]:
+    with tabs[7]:
         _render_table(report_tables["full_sku"])
-    with tabs[10]:
+    with tabs[8]:
         _render_table(report_tables["data_errors"])
-    with tabs[11]:
+    with tabs[9]:
         export_bytes = export_analysis_report(report_tables)
         filename = f"amazon_inventory_profit_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         st.download_button(

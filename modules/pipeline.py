@@ -10,7 +10,8 @@ from .cleaning import clean_data
 from .metrics import calculate_metrics
 from .parent_analysis import analyze_parent
 from .product_line_analysis import analyze_product_lines
-from .recommendations import apply_recommendations, build_focus_reports
+from .recommendations import apply_recommendations
+from .sku_roles import build_sku_role_reports, classify_sku_roles
 from .spu_analysis import analyze_spu
 from .validation import validate_data
 
@@ -70,6 +71,16 @@ FULL_SKU_COLUMNS = [
     "profit_status",
     "ad_status",
     "cashflow_risk_level",
+    "sku_role",
+    "sku_role_candidates",
+    "sku_role_reason",
+    "role_parent_key",
+    "parent_sku_count",
+    "sku_sales_share_in_parent",
+    "sku_revenue_share_in_parent",
+    "sku_ad_spend_share_in_parent",
+    "sku_profit_share_in_parent",
+    "sku_stock_share_in_parent",
     "final_action",
     "priority",
     "reason",
@@ -140,7 +151,7 @@ def prepare_full_sku_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_overview(
     full_sku: pd.DataFrame,
-    focus_reports: dict[str, pd.DataFrame],
+    role_reports: dict[str, pd.DataFrame],
     thresholds: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str, pd.DataFrame]:
     sku_count = _nunique(full_sku, "sku") or len(full_sku)
@@ -185,10 +196,12 @@ def build_overview(
     ad_cvr = _safe_divide(ad_orders, ad_clicks)
     ad_cvr = _use_source_ratio_when_needed(ad_cvr, _mean(full_sku, "ad_cvr"))
 
-    high_margin_slow_count = len(focus_reports.get("high_margin_slow_turnover", pd.DataFrame()))
+    traffic_count = len(role_reports.get("traffic_skus", pd.DataFrame()))
+    main_count = len(role_reports.get("main_skus", pd.DataFrame()))
+    profit_count = len(role_reports.get("profit_skus", pd.DataFrame()))
+    low_efficiency_count = len(role_reports.get("low_efficiency_skus", pd.DataFrame()))
     clearance_count = int(full_sku.get("final_action", pd.Series(dtype=str)).isin(["清货处理", "禁止补货", "高毛利停补"]).sum())
     urgent_count = int(full_sku.get("final_action", pd.Series(dtype=str)).isin(["立即补货", "优先补货"]).sum())
-    ad_optimization_count = len(focus_reports.get("ad_optimization", pd.DataFrame()))
     available_days = _numeric_series(full_sku, "available_stock_days", np.nan)
     available_qty_series = _numeric_series(full_sku, "available_stock_qty", 0.0).fillna(0.0)
     finite_available_days = available_days.replace([np.inf, -np.inf], np.nan)
@@ -231,25 +244,27 @@ def build_overview(
         "建议补货总量": _sum(full_sku, "recommended_replenishment_qty"),
         "清货风险 SKU 数": int((full_sku.get("final_action", pd.Series(dtype=str)) == "清货处理").sum()),
         "禁止补货 SKU 数": int((full_sku.get("final_action", pd.Series(dtype=str)) == "禁止补货").sum()),
-        "高毛利慢周转 SKU 数": high_margin_slow_count,
         "立即补货 SKU 数": int((full_sku.get("final_action", pd.Series(dtype=str)) == "立即补货").sum()),
-        "广告优化 SKU 数": ad_optimization_count,
         "清货/停补 SKU 数": clearance_count,
         "紧急补货 SKU 数": urgent_count,
+        "引流 SKU 数": traffic_count,
+        "主力 SKU 数": main_count,
+        "利润 SKU 数": profit_count,
+        "低效异常 SKU 数": low_efficiency_count,
     }
 
     summary = (
         f"本次共分析 {sku_count} 个 SKU，涉及 {metrics['父体数']} 个父体、{metrics['SPU 数']} 个 SPU、"
         f"{metrics['品线数']} 条品线。\n"
         f"当前主要问题：\n"
-        f"1. 高毛利慢周转 SKU 有 {high_margin_slow_count} 个，说明部分利润被库存占用，需加速周转。\n"
-        f"2. 91-180 天红线可售库存量为 {redline_qty:,.1f} 件，需 P0 处理周转。\n"
-        f"3. 清货/停补 SKU 有 {clearance_count} 个，说明库存现金流风险较高。\n"
-        f"4. 90天+库存占比为 {_format_ratio(over_90_inventory_ratio)}，理想状态应低于 {max_over_90_ratio:.0%}，"
+        f"1. 主力 SKU 有 {main_count} 个，是父体内销量/销售贡献靠前且利润为正的核心款。\n"
+        f"2. 利润 SKU 有 {profit_count} 个，承担主要利润贡献或高毛利贡献。\n"
+        f"3. 引流 SKU 有 {traffic_count} 个，承担流量或订单承接，需要持续监控广告效率。\n"
+        f"4. 低效异常 SKU 有 {low_efficiency_count} 个，需优先复核库存、利润或广告问题。\n"
+        f"5. 91-180 天红线可售库存量为 {redline_qty:,.1f} 件，需 P0 处理周转。\n"
+        f"6. 90天+库存占比为 {_format_ratio(over_90_inventory_ratio)}，理想状态应低于 {max_over_90_ratio:.0%}，"
         f"需围绕目标日销量 {ideal_turnover_daily_units:,.1f} 加速周转。\n"
-        f"5. 广告优化 SKU 有 {ad_optimization_count} 个，说明广告花费存在亏损或无转化。\n"
-        f"6. 紧急补货 SKU 有 {urgent_count} 个，需避免断货影响排名和销售。\n"
-        f"7. 建议优先关注头部问题 SKU 和尾部极端异常 SKU。"
+        f"7. 紧急补货 SKU 有 {urgent_count} 个，清货/停补 SKU 有 {clearance_count} 个，仍需结合 final_action 执行。"
     )
 
     overview_rows = [{"metric": key, "value": value} for key, value in metrics.items()]
@@ -266,23 +281,22 @@ def run_analysis(
     cleaned = clean_data(mapped_df, mapping_config)
     metric_df = calculate_metrics(cleaned, thresholds)
     classified = classify_skus(metric_df, thresholds)
-    full = apply_recommendations(classified, thresholds)
+    recommended = apply_recommendations(classified, thresholds)
+    full = classify_sku_roles(recommended, thresholds)
     data_errors = validate_data(full, mapping_report, mapping_config)
-    focus_reports = build_focus_reports(full, thresholds)
+    role_reports = build_sku_role_reports(full)
     parent_analysis, parent_structure = analyze_parent(full, thresholds)
     spu_analysis = analyze_spu(full, thresholds)
     product_line_analysis = analyze_product_lines(full, thresholds)
     full_sku = prepare_full_sku_table(full)
-    overview_metrics, overview_summary, overview = build_overview(full_sku, focus_reports, thresholds)
+    overview_metrics, overview_summary, overview = build_overview(full_sku, role_reports, thresholds)
 
     report_tables = {
         "overview": overview,
-        "head_problem_skus": focus_reports["head_problem_skus"],
-        "tail_abnormal_skus": focus_reports["tail_abnormal_skus"],
-        "high_margin_slow_turnover": focus_reports["high_margin_slow_turnover"],
-        "urgent_replenishment": focus_reports["urgent_replenishment"],
-        "clearance_stop": focus_reports["clearance_stop"],
-        "ad_optimization": focus_reports["ad_optimization"],
+        "traffic_skus": role_reports["traffic_skus"],
+        "main_skus": role_reports["main_skus"],
+        "profit_skus": role_reports["profit_skus"],
+        "low_efficiency_skus": role_reports["low_efficiency_skus"],
         "full_sku": full_sku,
         "parent_analysis": parent_analysis,
         "parent_structure_anomalies": parent_structure,
@@ -294,7 +308,7 @@ def run_analysis(
     return {
         "full": full,
         "full_sku": full_sku,
-        "focus_reports": focus_reports,
+        "role_reports": role_reports,
         "parent_analysis": parent_analysis,
         "parent_structure_anomalies": parent_structure,
         "spu_analysis": spu_analysis,

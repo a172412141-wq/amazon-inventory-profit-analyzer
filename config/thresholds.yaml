@@ -31,3 +31,10 @@ ads:
 ranking:
   top_percent: 0.20
   tail_top_n: 20
+
+sku_roles:
+  high_parent_share: 0.30
+  medium_parent_share: 0.20
+  low_parent_share: 0.10
+  high_stock_share: 0.30
+  traffic_profit_share_discount: 0.70
