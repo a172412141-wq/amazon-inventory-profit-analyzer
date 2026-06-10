@@ -284,7 +284,7 @@ def run_analysis(
     recommended = apply_recommendations(classified, thresholds)
     full = classify_sku_roles(recommended, thresholds)
     data_errors = validate_data(full, mapping_report, mapping_config)
-    role_reports = build_sku_role_reports(full)
+    role_reports = build_sku_role_reports(full, thresholds)
     parent_analysis, parent_structure = analyze_parent(full, thresholds)
     spu_analysis = analyze_spu(full, thresholds)
     product_line_analysis = analyze_product_lines(full, thresholds)

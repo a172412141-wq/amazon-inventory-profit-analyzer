@@ -301,9 +301,23 @@ def _sort_role_table(df: pd.DataFrame) -> pd.DataFrame:
     return result.drop(columns=["_role_sort", "_sales_share_sort", "_profit_share_sort"], errors="ignore")
 
 
-def build_sku_role_reports(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def build_sku_role_reports(df: pd.DataFrame, thresholds: dict[str, Any] | None = None) -> dict[str, pd.DataFrame]:
+    source = df.copy()
+    required_columns = {
+        "sku_role",
+        "sku_role_candidates",
+        "sku_role_reason",
+        "sku_sales_share_in_parent",
+        "sku_profit_share_in_parent",
+        "sku_stock_share_in_parent",
+    }
+    if not required_columns.issubset(source.columns):
+        source = classify_sku_roles(source, thresholds)
+
     reports: dict[str, pd.DataFrame] = {}
     for key, role in ROLE_REPORT_KEYS.items():
-        selected = df[df.get("sku_role", pd.Series(dtype=str)) == role].copy()
+        role_mask = source["sku_role"].astype("string").fillna("").eq(role)
+        role_mask = role_mask.reindex(source.index, fill_value=False)
+        selected = source.loc[role_mask].copy()
         reports[key] = _ensure_columns(_sort_role_table(selected), ROLE_REPORT_COLUMNS)
     return reports

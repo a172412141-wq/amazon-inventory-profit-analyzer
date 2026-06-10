@@ -69,3 +69,31 @@ def test_role_reports_partition_all_skus():
     report_skus = set().union(*(set(report["sku"].dropna()) for report in reports.values()))
     assert report_skus == {"A", "B"}
     assert sum(len(report) for report in reports.values()) == len(result)
+
+
+def test_role_reports_classify_missing_role_columns_with_filtered_index():
+    df = pd.DataFrame(
+        {
+            "sku": ["A", "B"],
+            "parent_asin": ["P1", "P1"],
+            "sales_14d_units": [10, 0],
+            "sales_14d_amount": [100, 0],
+            "order_gross_profit": [20, -1],
+            "order_gross_margin": [0.2, -0.1],
+            "available_stock_qty": [20, 100],
+            "available_stock_days": [20, 200],
+            "main_daily_sales": [1, 0],
+            "total_supply_qty": [20, 100],
+            "ad_spend": [0, 0],
+            "ad_sales": [0, 0],
+            "final_action": ["观察", "清货处理"],
+            "priority": ["P4", "P0"],
+            "reason": ["", ""],
+        },
+        index=[10, 20],
+    )
+
+    reports = build_sku_role_reports(df)
+
+    report_skus = set().union(*(set(report["sku"].dropna()) for report in reports.values()))
+    assert report_skus == {"A", "B"}
