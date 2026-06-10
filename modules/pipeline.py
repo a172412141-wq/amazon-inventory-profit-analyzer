@@ -81,6 +81,8 @@ FULL_SKU_COLUMNS = [
     "sku_ad_spend_share_in_parent",
     "sku_profit_share_in_parent",
     "sku_stock_share_in_parent",
+    "parent_avg_sales_14d_units",
+    "parent_avg_order_gross_margin",
     "final_action",
     "priority",
     "reason",
@@ -257,10 +259,10 @@ def build_overview(
         f"本次共分析 {sku_count} 个 SKU，涉及 {metrics['父体数']} 个父体、{metrics['SPU 数']} 个 SPU、"
         f"{metrics['品线数']} 条品线。\n"
         f"当前主要问题：\n"
-        f"1. 主力 SKU 有 {main_count} 个，是父体内销量/销售贡献靠前且利润为正的核心款。\n"
-        f"2. 利润 SKU 有 {profit_count} 个，承担主要利润贡献或高毛利贡献。\n"
-        f"3. 引流 SKU 有 {traffic_count} 个，承担流量或订单承接，需要持续监控广告效率。\n"
-        f"4. 低效异常 SKU 有 {low_efficiency_count} 个，需优先复核库存、利润或广告问题。\n"
+        f"1. 引流 SKU 有 {traffic_count} 个，广告花费占父体总花费超过 35%，需持续监控广告效率。\n"
+        f"2. 主力 SKU 有 {main_count} 个，14天销量和毛利率均高于父体平均值。\n"
+        f"3. 利润 SKU 有 {profit_count} 个，毛利率高于父体平均值 50% 以上。\n"
+        f"4. 低效异常 SKU 有 {low_efficiency_count} 个，未命中引流、主力或利润 SKU 条件。\n"
         f"5. 91-180 天红线可售库存量为 {redline_qty:,.1f} 件，需 P0 处理周转。\n"
         f"6. 90天+库存占比为 {_format_ratio(over_90_inventory_ratio)}，理想状态应低于 {max_over_90_ratio:.0%}，"
         f"需围绕目标日销量 {ideal_turnover_daily_units:,.1f} 加速周转。\n"
