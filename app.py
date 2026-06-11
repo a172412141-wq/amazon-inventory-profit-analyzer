@@ -120,6 +120,36 @@ def _apply_filters(df: pd.DataFrame, filters: dict[str, list[str]]) -> pd.DataFr
     return result
 
 
+def _filter_key(column: str) -> str:
+    return f"filter_{column}"
+
+
+def _prune_filter_selection(column: str, options: list[str]) -> None:
+    key = _filter_key(column)
+    if key not in st.session_state:
+        return
+    selected = st.session_state.get(key) or []
+    option_set = set(options)
+    valid_selected = [value for value in selected if value in option_set]
+    if valid_selected != selected:
+        st.session_state[key] = valid_selected
+
+
+def _render_linked_filters(df: pd.DataFrame, filter_columns: list[str]) -> dict[str, list[str]]:
+    filters: dict[str, list[str]] = {}
+    scoped = df.copy()
+    for column in filter_columns:
+        options = _options(scoped, column)
+        _prune_filter_selection(column, options)
+        if not options:
+            continue
+        selected = st.multiselect(column, options, key=_filter_key(column))
+        if selected:
+            filters[column] = selected
+            scoped = _apply_filters(scoped, {column: selected})
+    return filters
+
+
 def _filter_errors(data_errors: pd.DataFrame, visible_skus: set[str]) -> pd.DataFrame:
     if data_errors.empty or not visible_skus:
         return data_errors
@@ -246,8 +276,8 @@ def main() -> None:
     with st.sidebar:
         st.header("筛选")
         filter_columns = [
-            "asin",
             "parent_asin",
+            "asin",
             "spu",
             "product_line",
             "sku_role",
@@ -258,11 +288,7 @@ def main() -> None:
             "turnover_level",
             "cashflow_risk_level",
         ]
-        filters = {
-            column: st.multiselect(column, _options(full, column))
-            for column in filter_columns
-            if _options(full, column)
-        }
+        filters = _render_linked_filters(full, filter_columns)
 
     filtered_full = _apply_filters(full, filters)
     report_tables, overview_metrics, overview_summary = _build_filtered_tables(
