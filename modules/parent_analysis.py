@@ -142,6 +142,7 @@ def analyze_parent(df: pd.DataFrame, thresholds: dict | None = None) -> tuple[pd
         "order_gross_profit",
         "weighted_stock_days",
         "acos",
+        "acoas",
         "order_gross_margin",
         "aged_inventory_90_plus",
         "aged_inventory_181_plus",

@@ -61,8 +61,8 @@ def test_after_ads_profit_fields_are_not_created():
 
 def test_percentage_fields_are_normalized():
     config = {
-        "numeric_fields": ["order_gross_margin", "acos"],
-        "percentage_fields": ["order_gross_margin", "acos"],
+        "numeric_fields": ["order_gross_margin", "acos", "acoas"],
+        "percentage_fields": ["order_gross_margin", "acos", "acoas"],
         "zero_fill_fields": [],
     }
     df = pd.DataFrame(
@@ -70,6 +70,7 @@ def test_percentage_fields_are_normalized():
             "sku": ["A", "B", "C"],
             "order_gross_margin": ["30%", 30, 0.3],
             "acos": ["25%", 25, 0.25],
+            "acoas": ["10%", 10, 0.1],
         }
     )
 
@@ -77,6 +78,7 @@ def test_percentage_fields_are_normalized():
 
     assert result["order_gross_margin"].tolist() == [0.3, 0.3, 0.3]
     assert result["acos"].tolist() == [0.25, 0.25, 0.25]
+    assert result["acoas"].tolist() == [0.1, 0.1, 0.1]
 
 
 def test_ad_and_inventory_metrics_are_calculated():
@@ -112,9 +114,28 @@ def test_ad_and_inventory_metrics_are_calculated():
     assert result.loc[0, "ad_cvr"] == 0.07
     assert result.loc[0, "cvr"] == 0.07
     assert result.loc[0, "ad_order_share"] == 0.35
+    assert result.loc[0, "acoas"] == 50 / 1400
     assert result.loc[0, "available_stock_days"] == 60
     assert result.loc[0, "inbound_stock_days"] == 30
     assert result.loc[0, "ideal_turnover_daily_units"] == 120 / 90
+
+
+def test_acoas_falls_back_to_7d_sales_amount():
+    df = pd.DataFrame(
+        {
+            "sales_7d_units": [0],
+            "sales_14d_units": [14],
+            "sales_7d_amount": [1000],
+            "sales_14d_amount": [0],
+            "predicted_daily_sales": [1],
+            "total_supply_qty": [30],
+            "ad_spend": [80],
+        }
+    )
+
+    result = calculate_metrics(df)
+
+    assert result.loc[0, "acoas"] == 0.08
 
 
 def test_ad_order_share_falls_back_to_14d_units_when_total_orders_missing():

@@ -64,6 +64,13 @@ def _gross_margin_from_sales_amount(row: dict[str, Any]) -> float:
     return float(gross_profit / sales_amount) if sales_amount > 0 else np.nan
 
 
+def _total_sales_amount(row: dict[str, Any]) -> float:
+    sales_amount = row.get("sales_14d_amount", 0.0)
+    if sales_amount <= 0:
+        sales_amount = row.get("sales_7d_amount", 0.0)
+    return float(sales_amount)
+
+
 def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | None = None) -> pd.DataFrame:
     if group_col not in df.columns:
         return pd.DataFrame()
@@ -102,6 +109,8 @@ def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | 
         ad_sales = row.get("ad_sales", 0.0)
         ad_spend = row.get("ad_spend", 0.0)
         row["acos"] = ad_spend / ad_sales if ad_sales > 0 else (np.inf if ad_spend > 0 else np.nan)
+        total_sales_amount = _total_sales_amount(row)
+        row["acoas"] = ad_spend / total_sales_amount if total_sales_amount > 0 else (np.inf if ad_spend > 0 else np.nan)
 
         row["order_gross_margin"] = _gross_margin_from_sales_amount(row)
 

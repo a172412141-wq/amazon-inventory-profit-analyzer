@@ -148,6 +148,8 @@ def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.Da
     calculated_cvr = calculated_cvr.where(calculated_cvr.notna(), _safe_divide(sales_7d_units, sessions_7d))
     result["cvr"] = cvr_input.where(cvr_input.notna(), calculated_cvr)
     result["ad_order_share"] = _safe_divide(ad_orders, result["total_orders"])
+    total_sales_amount = sales_14d_amount.where(sales_14d_amount > 0, sales_7d_amount)
+    result["acoas"] = _safe_divide(ad_spend, total_sales_amount)
 
     result["break_even_acos"] = order_gross_margin
     result["ad_no_conversion_flag"] = (ad_spend > 0) & (ad_sales <= 0)

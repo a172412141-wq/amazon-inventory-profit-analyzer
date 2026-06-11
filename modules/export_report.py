@@ -33,6 +33,7 @@ PERCENT_HINTS = (
     "ctr",
     "cvr",
     "ad_cvr",
+    "acoas",
     "percent",
     "percentage",
     "毛利率",

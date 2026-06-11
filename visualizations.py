@@ -69,6 +69,7 @@ PERCENT_HINTS = (
     "ratio",
     "ctr",
     "cvr",
+    "acoas",
     "percent",
     "percentage",
     "毛利率",

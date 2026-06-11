@@ -58,6 +58,7 @@ FULL_SKU_COLUMNS = [
     "sessions_7d",
     "sessions_14d",
     "acos",
+    "acoas",
     "cpc",
     "ctr",
     "cvr",
@@ -180,6 +181,8 @@ def build_overview(
     sales_7d_units = _sum(full_sku, "sales_7d_units")
     sales_14d_amount = _sum(full_sku, "sales_14d_amount")
     sales_7d_amount = _sum(full_sku, "sales_7d_amount")
+    total_sales_amount = sales_14d_amount if sales_14d_amount > 0 else sales_7d_amount
+    overall_acoas = _safe_divide(ad_spend, total_sales_amount)
     gross_profit = _sum(full_sku, "order_gross_profit")
     avg_margin = gross_profit / sales_7d_amount if sales_7d_amount > 0 and gross_profit != 0 else pd.to_numeric(
         full_sku.get("order_gross_margin", pd.Series(dtype=float)),
@@ -238,6 +241,7 @@ def build_overview(
         "总广告花费": ad_spend,
         "广告销售额": ad_sales,
         "整体 ACOS": overall_acos,
+        "整体 ACOAS": overall_acoas,
         "广告订单占比": ad_order_share,
         "CPC": cpc,
         "CTR": ctr,

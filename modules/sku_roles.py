@@ -43,6 +43,7 @@ ROLE_REPORT_COLUMNS = [
     "order_gross_profit",
     "order_gross_margin",
     "acos",
+    "acoas",
     "available_stock_qty",
     "aged_inventory_90_plus",
     "aged_inventory_181_plus",

@@ -209,6 +209,16 @@ fields:
       - ACOS
       - ACoS
       - acos
+  acoas:
+    aliases:
+      - ACOAS
+      - ACoAS
+      - 总ACOS
+      - 总 ACoS
+      - 广告花费销售占比
+      - 广告花费占总销售额
+      - 广告花费/总销售额
+      - acoas
   aged_inventory_181_plus:
     aliases:
       - 181天以上库龄
@@ -319,6 +329,7 @@ numeric_fields:
   - sessions_7d
   - sessions_14d
   - acos
+  - acoas
   - aged_inventory_181_plus
   - aged_inventory_91_180
   - aged_inventory_181_270
@@ -334,6 +345,7 @@ percentage_fields:
   - ad_cvr
   - cvr
   - acos
+  - acoas
 
 zero_fill_fields:
   - predicted_daily_sales
