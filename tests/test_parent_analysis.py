@@ -49,3 +49,28 @@ def test_parent_margin_uses_profit_sum_divided_by_sales_amount_sum():
     summary, _ = analyze_parent(df, {"inventory": {"healthy_max_days": 60, "urgent_redline_days": 180}})
 
     assert summary.loc[0, "order_gross_margin"] == 0.10
+
+
+def test_parent_analysis_sums_aged_inventory_90_plus():
+    df = pd.DataFrame(
+        {
+            "parent_asin": ["P1", "P1"],
+            "sku": ["A", "B"],
+            "spu": ["S1", "S1"],
+            "product_line": ["L1", "L1"],
+            "sales_7d_units": [7, 7],
+            "sales_14d_units": [14, 14],
+            "sales_7d_amount": [100, 200],
+            "total_supply_qty": [20, 20],
+            "available_stock_qty": [20, 20],
+            "ad_spend": [0, 0],
+            "ad_sales": [0, 0],
+            "order_gross_profit": [10, 20],
+            "order_gross_margin": [0.1, 0.1],
+            "aged_inventory_90_plus": [5, 8],
+        }
+    )
+
+    summary, _ = analyze_parent(df, {"inventory": {"healthy_max_days": 60, "urgent_redline_days": 180}})
+
+    assert summary.loc[0, "aged_inventory_90_plus"] == 13

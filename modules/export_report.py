@@ -51,7 +51,7 @@ MONEY_FIELDS = {
     "current_daily_sales_amount",
     "inventory_value",
 }
-QUANTITY_HINTS = ("qty", "units", "days", "count", "sales_7d_units", "sales_14d_units")
+QUANTITY_HINTS = ("qty", "units", "days", "count", "aged_inventory", "sales_7d_units", "sales_14d_units")
 
 
 def _sort_df(df: pd.DataFrame) -> pd.DataFrame:

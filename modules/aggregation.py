@@ -19,7 +19,13 @@ SUM_FIELDS = [
     "ad_spend",
     "ad_sales",
     "order_gross_profit",
+    "aged_inventory_90_plus",
     "aged_inventory_181_plus",
+    "aged_inventory_91_180",
+    "aged_inventory_181_270",
+    "aged_inventory_271_330",
+    "aged_inventory_331_365",
+    "aged_inventory_365_plus",
     "main_daily_sales",
 ]
 

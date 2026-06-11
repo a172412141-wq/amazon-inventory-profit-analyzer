@@ -132,3 +132,59 @@ def test_ad_order_share_falls_back_to_14d_units_when_total_orders_missing():
 
     assert result.loc[0, "total_orders"] == 28
     assert result.loc[0, "ad_order_share"] == 0.25
+
+
+def test_aged_inventory_90_plus_sums_detailed_age_buckets():
+    df = pd.DataFrame(
+        {
+            "sales_7d_units": [7],
+            "sales_14d_units": [14],
+            "predicted_daily_sales": [1],
+            "total_supply_qty": [100],
+            "aged_inventory_91_180": [5],
+            "aged_inventory_181_270": [2],
+            "aged_inventory_271_330": [3],
+            "aged_inventory_331_365": [4],
+            "aged_inventory_365_plus": [6],
+            "aged_inventory_181_plus": [999],
+        }
+    )
+
+    result = calculate_metrics(df)
+
+    assert result.loc[0, "aged_inventory_90_plus"] == 20
+
+
+def test_aged_inventory_90_plus_uses_181_plus_fallback_when_detail_missing():
+    df = pd.DataFrame(
+        {
+            "sales_7d_units": [7],
+            "sales_14d_units": [14],
+            "predicted_daily_sales": [1],
+            "total_supply_qty": [100],
+            "aged_inventory_91_180": [5],
+            "aged_inventory_181_plus": [8],
+        }
+    )
+
+    result = calculate_metrics(df)
+
+    assert result.loc[0, "aged_inventory_90_plus"] == 13
+
+
+def test_aged_inventory_90_plus_direct_value_takes_priority():
+    df = pd.DataFrame(
+        {
+            "sales_7d_units": [7],
+            "sales_14d_units": [14],
+            "predicted_daily_sales": [1],
+            "total_supply_qty": [100],
+            "aged_inventory_90_plus": [30],
+            "aged_inventory_91_180": [5],
+            "aged_inventory_181_plus": [8],
+        }
+    )
+
+    result = calculate_metrics(df)
+
+    assert result.loc[0, "aged_inventory_90_plus"] == 30

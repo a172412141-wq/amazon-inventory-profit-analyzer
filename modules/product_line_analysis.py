@@ -50,6 +50,7 @@ def analyze_product_lines(df: pd.DataFrame, thresholds: dict | None = None) -> p
         "weighted_stock_days",
         "acos",
         "order_gross_margin",
+        "aged_inventory_90_plus",
         "aged_inventory_181_plus",
         "recent_sales_trend",
     ]

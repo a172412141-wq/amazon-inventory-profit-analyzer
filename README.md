@@ -58,7 +58,13 @@ streamlit run app.py
 - `ad_cvr`
 - `sessions_7d`
 - `sessions_14d`
+- `aged_inventory_90_plus`
 - `aged_inventory_181_plus`
+- `aged_inventory_91_180`
+- `aged_inventory_181_270`
+- `aged_inventory_271_330`
+- `aged_inventory_331_365`
+- `aged_inventory_365_plus`
 - `inbound_qty`
 - `inventory_value`
 
@@ -85,6 +91,12 @@ streamlit run app.py
 - `14天会话数` -> `sessions_14d`
 - `广告花费` -> `ad_spend`
 - `广告销售额` -> `ad_sales`
+- `库龄超过90天合计数量` -> `aged_inventory_90_plus`
+- `91~180库龄` -> `aged_inventory_91_180`
+- `181~270库龄` -> `aged_inventory_181_270`
+- `271~330库龄` -> `aged_inventory_271_330`
+- `331~365库龄` -> `aged_inventory_331_365`
+- `365以上库龄` -> `aged_inventory_365_plus`
 - `181以上库龄` -> `aged_inventory_181_plus`
 
 如需兼容新字段名，只需要在对应标准字段的 `aliases` 中增加名称。
@@ -150,7 +162,7 @@ SKU 经营角色用 `sku_role` 表示，只能是以下四类之一：
 
 父体日均销量平均值按每个 `parent_asin` 单独分组计算，使用子 SKU 指标值的算术平均，不使用合计值。例如同一父体下两个子 SKU 的日均销量为 4 和 6，则父体平均日均销量为 5。父体毛利率按 `父体下所有子体毛利润之和 / 父体下所有子体销售额之和` 计算。
 
-总览 Dashboard 会展示 CPC、CTR、CVR、广告CVR、广告订单占比、可售库存天数、在途库存天数，以及 61-90 天、91-180 天、180 天以上可售库存量。广告订单占比公式为 `广告订单 / 总订单`，总订单优先读取原表字段，没有时使用 `14天订单商品总数`。其中 CPC/CTR/CVR 优先使用原表字段；如果原表缺失，会按广告点击、曝光、会话、广告订单等字段自动计算。
+总览 Dashboard 会展示 CPC、CTR、CVR、广告CVR、广告订单占比、可售库存天数、在途库存天数、库龄超过90天合计数量，以及 61-90 天、91-180 天、180 天以上可售库存量。广告订单占比公式为 `广告订单 / 总订单`，总订单优先读取原表字段，没有时使用 `14天订单商品总数`。其中 CPC/CTR/CVR 优先使用原表字段；如果原表缺失，会按广告点击、曝光、会话、广告订单等字段自动计算。
 
 ## 如何调整 thresholds.yaml
 

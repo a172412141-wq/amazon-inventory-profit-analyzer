@@ -216,6 +216,57 @@ fields:
       - 181+库龄
       - 181天以上库存
       - aged_inventory_181_plus
+  aged_inventory_91_180:
+    aliases:
+      - 91~180库龄
+      - 91-180库龄
+      - 91到180天库龄
+      - 91至180天库龄
+      - 91~180天库龄
+      - 91-180天库龄
+      - aged_inventory_91_180
+  aged_inventory_181_270:
+    aliases:
+      - 181~270库龄
+      - 181-270库龄
+      - 181到270天库龄
+      - 181至270天库龄
+      - 181~270天库龄
+      - 181-270天库龄
+      - aged_inventory_181_270
+  aged_inventory_271_330:
+    aliases:
+      - 271~330库龄
+      - 271-330库龄
+      - 271到330天库龄
+      - 271至330天库龄
+      - 271~330天库龄
+      - 271-330天库龄
+      - aged_inventory_271_330
+  aged_inventory_331_365:
+    aliases:
+      - 331~365库龄
+      - 331-365库龄
+      - 331到365天库龄
+      - 331至365天库龄
+      - 331~365天库龄
+      - 331-365天库龄
+      - aged_inventory_331_365
+  aged_inventory_365_plus:
+    aliases:
+      - 365以上库龄
+      - 365天以上库龄
+      - 365+库龄
+      - 365天以上库存
+      - aged_inventory_365_plus
+  aged_inventory_90_plus:
+    aliases:
+      - 库龄超过90天合计数量
+      - 90天以上库龄合计
+      - 90天以上库龄合计数量
+      - 90天以上库存合计
+      - 90+库龄合计
+      - aged_inventory_90_plus
   inventory_value:
     aliases:
       - 库存金额
@@ -269,6 +320,12 @@ numeric_fields:
   - sessions_14d
   - acos
   - aged_inventory_181_plus
+  - aged_inventory_91_180
+  - aged_inventory_181_270
+  - aged_inventory_271_330
+  - aged_inventory_331_365
+  - aged_inventory_365_plus
+  - aged_inventory_90_plus
   - inventory_value
 
 percentage_fields:
@@ -293,6 +350,12 @@ zero_fill_fields:
   - ad_sales
   - total_orders
   - aged_inventory_181_plus
+  - aged_inventory_91_180
+  - aged_inventory_181_270
+  - aged_inventory_271_330
+  - aged_inventory_331_365
+  - aged_inventory_365_plus
+  - aged_inventory_90_plus
   - inventory_value
 
 money_fields:
@@ -325,3 +388,9 @@ quantity_fields:
   - available_stock_days
   - inbound_stock_days
   - aged_inventory_181_plus
+  - aged_inventory_91_180
+  - aged_inventory_181_270
+  - aged_inventory_271_330
+  - aged_inventory_331_365
+  - aged_inventory_365_plus
+  - aged_inventory_90_plus

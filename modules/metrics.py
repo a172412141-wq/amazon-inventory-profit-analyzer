@@ -26,6 +26,35 @@ def _safe_divide(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
     return result
 
 
+def _has_source_values(df: pd.DataFrame, column: str) -> bool:
+    missing_flag = f"_missing_{column}"
+    if missing_flag not in df.columns:
+        return column in df.columns and pd.to_numeric(df[column], errors="coerce").notna().any()
+    return (~df[missing_flag].fillna(True).astype(bool)).any()
+
+
+def _calculate_aged_inventory_90_plus(df: pd.DataFrame) -> pd.Series:
+    direct = _series(df, "aged_inventory_90_plus", np.nan)
+    if "_missing_aged_inventory_90_plus" in df.columns:
+        direct_missing = df["_missing_aged_inventory_90_plus"].fillna(True).astype(bool)
+    else:
+        direct_missing = direct.isna()
+    age_91_180 = _series(df, "aged_inventory_91_180").fillna(0.0)
+    detailed_181_columns = [
+        "aged_inventory_181_270",
+        "aged_inventory_271_330",
+        "aged_inventory_331_365",
+        "aged_inventory_365_plus",
+    ]
+    has_detailed_181 = any(_has_source_values(df, column) for column in detailed_181_columns)
+    if has_detailed_181:
+        age_181_plus = sum(_series(df, column).fillna(0.0) for column in detailed_181_columns)
+    else:
+        age_181_plus = _series(df, "aged_inventory_181_plus").fillna(0.0)
+    calculated = (age_91_180 + age_181_plus).fillna(0.0)
+    return direct.where((~direct_missing) & direct.notna(), calculated).fillna(0.0)
+
+
 def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.DataFrame:
     result = df.copy()
 
@@ -110,6 +139,7 @@ def calculate_metrics(df: pd.DataFrame, thresholds: dict | None = None) -> pd.Da
     )
     result["over_90_stock_qty"] = (available_stock_qty - avg_sales_7d * ideal_turnover_days).clip(lower=0)
     result["over_90_inventory_ratio"] = _safe_divide(result["over_90_stock_qty"], available_stock_qty)
+    result["aged_inventory_90_plus"] = _calculate_aged_inventory_90_plus(result)
     calculated_cpc = _safe_divide(ad_spend, ad_clicks)
     result["cpc"] = cpc_input.where(cpc_input.notna(), calculated_cpc)
     result["ctr"] = ctr_input.where(ctr_input.notna(), _safe_divide(ad_clicks, ad_impressions))
