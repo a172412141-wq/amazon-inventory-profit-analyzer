@@ -38,6 +38,104 @@ PERCENT_HINTS = (
     "占比",
     "比率",
 )
+PINNED_SKU_COLUMNS = [
+    "sku",
+    "role_daily_sales",
+    "order_gross_profit",
+    "order_gross_margin",
+    "ad_spend",
+    "available_stock_days",
+    "stock_days",
+    "available_stock_qty",
+    "reason",
+]
+COLUMN_LABELS = {
+    "sku": "SKU",
+    "asin": "ASIN",
+    "parent_asin": "父ASIN",
+    "spu": "SPU",
+    "product_line": "品线",
+    "category_level_1": "一级分类",
+    "product_name": "产品名称",
+    "predicted_daily_sales": "预测日销量",
+    "stock_days": "库存天数",
+    "calculated_stock_days": "计算库存天数",
+    "available_stock_qty": "可售库存量",
+    "available_stock_days": "可售库存天数",
+    "inbound_stock_days": "在途库存天数",
+    "over_90_stock_qty": "90天+库存量",
+    "over_90_inventory_ratio": "90天+库存占比",
+    "recommended_replenishment_qty": "建议补货量",
+    "total_supply_qty": "总供给量",
+    "available_qty": "可用量",
+    "inbound_qty": "在途量",
+    "sales_7d_units": "7天销量",
+    "sales_14d_units": "14天销量",
+    "sales_7d_amount": "7天销售额",
+    "sales_14d_amount": "14天销售额",
+    "avg_sales_7d": "7天日均销量",
+    "avg_sales_14d": "14天日均销量",
+    "main_daily_sales": "主日均销量",
+    "current_daily_sales_units": "目前日均销量",
+    "current_daily_sales_amount": "目前日均销售额",
+    "ideal_turnover_daily_units": "理想周转日销量",
+    "role_daily_sales": "角色判断日均销量",
+    "parent_avg_role_daily_sales": "父体平均日均销量",
+    "parent_order_gross_margin": "父体毛利率",
+    "parent_avg_sales_14d_units": "父体平均14天销量",
+    "parent_avg_order_gross_margin": "父体平均毛利率",
+    "recent_sales_trend": "近期销量趋势",
+    "order_gross_profit": "订单毛利润",
+    "order_gross_margin": "订单毛利率",
+    "ad_spend": "广告花费",
+    "ad_sales": "广告销售额",
+    "ad_impressions": "广告曝光",
+    "ad_clicks": "广告点击",
+    "ad_orders": "广告订单",
+    "total_orders": "总订单",
+    "sessions_7d": "7天会话数",
+    "sessions_14d": "14天会话数",
+    "acos": "ACOS",
+    "cpc": "CPC",
+    "ctr": "CTR",
+    "cvr": "CVR",
+    "ad_cvr": "广告CVR",
+    "ad_order_share": "广告订单占比",
+    "aged_inventory_181_plus": "181天以上库龄库存",
+    "inventory_value": "库存金额",
+    "margin_level": "毛利等级",
+    "turnover_level": "周转等级",
+    "inventory_status": "库存状态",
+    "profit_status": "利润状态",
+    "ad_status": "广告状态",
+    "cashflow_risk_level": "现金流风险等级",
+    "sku_role": "SKU经营角色",
+    "sku_role_candidates": "SKU角色候选",
+    "sku_role_reason": "SKU角色原因",
+    "role_parent_key": "角色父体分组",
+    "parent_sku_count": "父体SKU数",
+    "sku_sales_share_in_parent": "父体内销量占比",
+    "sku_revenue_share_in_parent": "父体内销售额占比",
+    "sku_ad_spend_share_in_parent": "父体内广告花费占比",
+    "sku_profit_share_in_parent": "父体内利润占比",
+    "sku_stock_share_in_parent": "父体内库存占比",
+    "final_action": "最终动作",
+    "priority": "优先级",
+    "reason": "判断原因",
+    "parent_status": "父体状态",
+    "sku_count": "SKU数",
+    "parent_count": "父体数",
+    "weighted_stock_days": "加权库存天数",
+    "structure_problem": "结构问题",
+    "spu_status": "SPU状态",
+    "line_status": "品线状态",
+    "operation_recommendation": "运营建议",
+    "dimension_type": "维度类型",
+    "dimension_value": "维度值",
+    "error_type": "异常类型",
+    "error_level": "异常等级",
+    "error_message": "异常说明",
+}
 
 
 @st.cache_data(show_spinner=False)
@@ -89,20 +187,87 @@ def _numeric_display_series(series: pd.Series) -> pd.Series | None:
     return numeric.mask(~np.isfinite(numeric), np.nan)
 
 
-def _prepare_dataframe_display(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
-    display = df.copy()
+def _column_label(column: str) -> str:
+    return COLUMN_LABELS.get(str(column), str(column))
+
+
+def _metric_option_label(column: str) -> str:
+    label = _column_label(column)
+    return label if label == column else f"{label} ({column})"
+
+
+def _pinned_columns_for(df: pd.DataFrame) -> list[str]:
+    return [column for column in PINNED_SKU_COLUMNS if column in df.columns]
+
+
+def _display_columns(
+    df: pd.DataFrame,
+    selected_extra_columns: list[str] | None = None,
+    use_pinned_defaults: bool = True,
+) -> list[str]:
+    if not use_pinned_defaults:
+        return list(df.columns)
+    pinned_columns = _pinned_columns_for(df)
+    selected = [column for column in (selected_extra_columns or []) if column in df.columns and column not in pinned_columns]
+    if not pinned_columns:
+        return list(df.columns)
+    return pinned_columns + selected
+
+
+def _prepare_dataframe_display(
+    df: pd.DataFrame,
+    selected_extra_columns: list[str] | None = None,
+    use_pinned_defaults: bool = False,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    display = df[_display_columns(df, selected_extra_columns, use_pinned_defaults)].copy()
     column_config: dict[str, Any] = {}
+    pinned_columns = set(_pinned_columns_for(df)) if use_pinned_defaults else set()
     for column in display.columns:
+        label = _column_label(str(column))
+        pinned = str(column) in pinned_columns
         numeric_values = _numeric_display_series(display[column])
         if numeric_values is None or not numeric_values.notna().any():
+            column_config[str(column)] = st.column_config.Column(label=label, pinned=pinned)
             continue
         if _is_percent_column(str(column)):
             display[column] = numeric_values * 100
-            column_config[str(column)] = st.column_config.NumberColumn(format="%.2f%%")
+            column_config[str(column)] = st.column_config.NumberColumn(label=label, format="%.2f%%", pinned=pinned)
         else:
             display[column] = numeric_values
-            column_config[str(column)] = st.column_config.NumberColumn(format="%.2f")
+            column_config[str(column)] = st.column_config.NumberColumn(label=label, format="%.2f", pinned=pinned)
     return display, column_config
+
+
+def _display_selector_key(table_key: str) -> str:
+    return f"display_columns_{table_key}"
+
+
+def _selector_container(label: str):
+    if hasattr(st, "popover"):
+        return st.popover(label)
+    return st.expander(label, expanded=False)
+
+
+def _selected_extra_columns(df: pd.DataFrame, table_key: str, enabled: bool) -> list[str]:
+    pinned_columns = _pinned_columns_for(df)
+    extra_columns = [column for column in df.columns if column not in pinned_columns]
+    if not enabled or not pinned_columns or not extra_columns:
+        return []
+
+    key = _display_selector_key(table_key)
+    selected = st.session_state.get(key) or []
+    valid_selected = [column for column in selected if column in extra_columns]
+    if valid_selected != selected:
+        st.session_state[key] = valid_selected
+
+    with _selector_container("显示指标"):
+        st.caption("左侧固定列始终显示；这里选择需要临时查看的其他指标。")
+        return st.multiselect(
+            "选择额外指标",
+            extra_columns,
+            key=key,
+            format_func=_metric_option_label,
+        )
 
 
 def _options(df: pd.DataFrame, column: str) -> list[str]:
@@ -285,10 +450,26 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
     st.markdown(summary.replace("\n", "\n\n"))
 
 
-def _render_table(df: pd.DataFrame, height: int = 520) -> None:
+def _render_table(
+    df: pd.DataFrame,
+    height: int = 520,
+    table_key: str = "table",
+    enable_metric_selector: bool = False,
+) -> None:
     st.caption(f"{len(df):,} 行")
-    display, column_config = _prepare_dataframe_display(df)
-    st.dataframe(display, column_config=column_config, use_container_width=True, height=height)
+    selected_extra_columns = _selected_extra_columns(df, table_key, enable_metric_selector)
+    display, column_config = _prepare_dataframe_display(
+        df,
+        selected_extra_columns,
+        use_pinned_defaults=enable_metric_selector,
+    )
+    st.dataframe(
+        display,
+        column_config=column_config,
+        use_container_width=True,
+        height=height,
+        key=f"dataframe_{table_key}",
+    )
 
 
 def main() -> None:
@@ -358,30 +539,30 @@ def main() -> None:
         _render_dashboard(report_tables["full_sku"], overview_metrics, overview_summary)
         render_visualizations("总览 Dashboard", report_tables)
     with tabs[1]:
-        _render_table(report_tables["traffic_skus"])
+        _render_table(report_tables["traffic_skus"], table_key="traffic_skus", enable_metric_selector=True)
         render_visualizations("引流 SKU", report_tables)
     with tabs[2]:
-        _render_table(report_tables["main_skus"])
+        _render_table(report_tables["main_skus"], table_key="main_skus", enable_metric_selector=True)
         render_visualizations("主力 SKU", report_tables)
     with tabs[3]:
-        _render_table(report_tables["profit_skus"])
+        _render_table(report_tables["profit_skus"], table_key="profit_skus", enable_metric_selector=True)
         render_visualizations("利润 SKU", report_tables)
     with tabs[4]:
-        _render_table(report_tables["low_efficiency_skus"])
+        _render_table(report_tables["low_efficiency_skus"], table_key="low_efficiency_skus", enable_metric_selector=True)
         render_visualizations("低效异常 SKU", report_tables)
     with tabs[5]:
-        _render_table(report_tables["parent_analysis"], height=420)
-        _render_table(report_tables["parent_structure_anomalies"], height=360)
+        _render_table(report_tables["parent_analysis"], height=420, table_key="parent_analysis")
+        _render_table(report_tables["parent_structure_anomalies"], height=360, table_key="parent_structure_anomalies")
         render_visualizations("父体分析", report_tables)
     with tabs[6]:
-        _render_table(report_tables["spu_analysis"], height=420)
-        _render_table(report_tables["product_line_analysis"], height=420)
+        _render_table(report_tables["spu_analysis"], height=420, table_key="spu_analysis")
+        _render_table(report_tables["product_line_analysis"], height=420, table_key="product_line_analysis")
         render_visualizations("SPU / 品线分析", report_tables)
     with tabs[7]:
-        _render_table(report_tables["full_sku"])
+        _render_table(report_tables["full_sku"], table_key="full_sku", enable_metric_selector=True)
         render_visualizations("SKU 完整判断", report_tables)
     with tabs[8]:
-        _render_table(report_tables["data_errors"])
+        _render_table(report_tables["data_errors"], table_key="data_errors")
         render_visualizations("数据异常", report_tables)
     with tabs[9]:
         export_bytes = export_analysis_report(report_tables)
