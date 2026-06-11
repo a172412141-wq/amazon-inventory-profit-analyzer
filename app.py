@@ -47,6 +47,8 @@ PINNED_SKU_COLUMNS = [
     "available_stock_days",
     "stock_days",
     "available_stock_qty",
+    "aged_inventory_90_plus",
+    "aged_inventory_181_plus",
     "reason",
 ]
 COLUMN_LABELS = {

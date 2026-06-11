@@ -44,6 +44,8 @@ ROLE_REPORT_COLUMNS = [
     "order_gross_margin",
     "acos",
     "available_stock_qty",
+    "aged_inventory_90_plus",
+    "aged_inventory_181_plus",
     "available_stock_days",
     "stock_days",
     "recommended_replenishment_qty",
