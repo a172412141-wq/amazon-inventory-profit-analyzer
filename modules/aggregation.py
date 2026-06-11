@@ -50,15 +50,12 @@ def _unique_join(group: pd.DataFrame, column: str) -> str:
     return "、".join(values[:8])
 
 
-def _weighted_average(group: pd.DataFrame, value_col: str, weight_col: str) -> float:
-    if value_col not in group.columns:
-        return np.nan
-    values = _num(group[value_col])
-    weights = _num(group[weight_col]) if weight_col in group.columns else pd.Series(1, index=group.index)
-    valid = values.notna() & weights.notna() & (weights > 0)
-    if valid.any() and weights[valid].sum() > 0:
-        return float((values[valid] * weights[valid]).sum() / weights[valid].sum())
-    return float(values.mean()) if values.notna().any() else np.nan
+def _gross_margin_from_sales_amount(row: dict[str, Any]) -> float:
+    gross_profit = row.get("order_gross_profit", 0.0)
+    sales_amount = row.get("sales_7d_amount", 0.0)
+    if sales_amount <= 0:
+        sales_amount = row.get("sales_14d_amount", 0.0)
+    return float(gross_profit / sales_amount) if sales_amount > 0 else np.nan
 
 
 def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | None = None) -> pd.DataFrame:
@@ -100,13 +97,7 @@ def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | 
         ad_spend = row.get("ad_spend", 0.0)
         row["acos"] = ad_spend / ad_sales if ad_sales > 0 else (np.inf if ad_spend > 0 else np.nan)
 
-        sales_7d_amount = row.get("sales_7d_amount", 0.0)
-        gross_profit = row.get("order_gross_profit", 0.0)
-        row["order_gross_margin"] = (
-            gross_profit / sales_7d_amount
-            if sales_7d_amount > 0 and gross_profit != 0
-            else _weighted_average(group, "order_gross_margin", "sales_7d_amount")
-        )
+        row["order_gross_margin"] = _gross_margin_from_sales_amount(row)
 
         avg_7d = row.get("sales_7d_units", 0.0) / 7
         avg_14d = row.get("sales_14d_units", 0.0) / 14

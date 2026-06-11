@@ -9,6 +9,7 @@ def test_sku_roles_are_parent_relative_and_mutually_exclusive():
             "sku": ["MAIN", "PROFIT", "TRAFFIC", "LOW"],
             "parent_asin": ["P1", "P1", "P1", "P1"],
             "sales_14d_units": [100, 20, 40, 0],
+            "sales_7d_amount": [1500, 600, 800, 200],
             "sales_14d_amount": [1000, 300, 400, 0],
             "ad_spend": [50, 0, 200, 30],
             "ad_sales": [500, 0, 300, 0],
@@ -44,9 +45,9 @@ def test_sku_roles_are_parent_relative_and_mutually_exclusive():
     assert result.loc[result["sku"] == "MAIN", "role_daily_sales"].iloc[0] > result.loc[
         result["sku"] == "MAIN", "parent_avg_role_daily_sales"
     ].iloc[0]
-    assert result.loc[result["sku"] == "MAIN", "order_gross_margin"].iloc[0] > result.loc[
-        result["sku"] == "MAIN", "parent_avg_order_gross_margin"
-    ].iloc[0]
+    parent_margin = result.loc[result["sku"] == "MAIN", "parent_order_gross_margin"].iloc[0]
+    assert parent_margin == (100 + 90 + 10 - 5) / (1500 + 600 + 800 + 200)
+    assert result.loc[result["sku"] == "MAIN", "order_gross_margin"].iloc[0] > parent_margin
 
 
 def test_parent_average_uses_child_arithmetic_mean_by_parent_asin():
@@ -56,6 +57,7 @@ def test_parent_average_uses_child_arithmetic_mean_by_parent_asin():
             "parent_asin": ["P1", "P1", "P2", "P2"],
             "current_daily_sales_units": [4, 6, 40, 60],
             "sales_14d_units": [56, 84, 560, 840],
+            "sales_7d_amount": [100, 200, 1000, 2000],
             "sales_14d_amount": [100, 200, 1000, 2000],
             "order_gross_profit": [10, 30, 100, 300],
             "order_gross_margin": [0.10, 0.20, 0.12, 0.22],
@@ -116,6 +118,7 @@ def test_traffic_rule_takes_priority_when_multiple_role_conditions_match():
             "sku": ["A", "B"],
             "parent_asin": ["P1", "P1"],
             "sales_14d_units": [100, 10],
+            "sales_7d_amount": [1500, 100],
             "sales_14d_amount": [1000, 100],
             "order_gross_profit": [300, 5],
             "order_gross_margin": [0.30, 0.05],

@@ -246,6 +246,7 @@ def main() -> None:
     with st.sidebar:
         st.header("筛选")
         filter_columns = [
+            "asin",
             "parent_asin",
             "spu",
             "product_line",
