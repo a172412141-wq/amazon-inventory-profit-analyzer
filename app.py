@@ -112,11 +112,23 @@ def _options(df: pd.DataFrame, column: str) -> list[str]:
     return sorted(value for value in values.unique().tolist() if value and value.lower() not in {"nan", "none"})
 
 
+def _normalize_filter_values(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if text and text.lower() not in {"nan", "none"}:
+            result.append(text)
+    return result
+
+
 def _apply_filters(df: pd.DataFrame, filters: dict[str, list[str]]) -> pd.DataFrame:
     result = df.copy()
     for column, selected in filters.items():
-        if selected and column in result.columns:
-            result = result[result[column].astype(str).isin(selected)]
+        selected_values = _normalize_filter_values(selected)
+        if selected_values and column in result.columns:
+            result = result[result[column].astype(str).str.strip().isin(selected_values)]
     return result
 
 
@@ -124,30 +136,73 @@ def _filter_key(column: str) -> str:
     return f"filter_{column}"
 
 
-def _prune_filter_selection(column: str, options: list[str]) -> None:
-    key = _filter_key(column)
-    if key not in st.session_state:
-        return
-    selected = st.session_state.get(key) or []
+def _filter_options_with_context(
+    df: pd.DataFrame,
+    filter_columns: list[str],
+    filters: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    normalized_filters = {
+        column: _normalize_filter_values(selected)
+        for column, selected in filters.items()
+        if _normalize_filter_values(selected)
+    }
+    options_by_column: dict[str, list[str]] = {}
+    for column in filter_columns:
+        context_filters = {
+            filter_column: selected
+            for filter_column, selected in normalized_filters.items()
+            if filter_column != column
+        }
+        scoped = _apply_filters(df, context_filters)
+        options_by_column[column] = _options(scoped, column)
+    return options_by_column
+
+
+def _prune_filter_values(selected: list[str] | None, options: list[str]) -> list[str]:
+    selected = _normalize_filter_values(selected)
     option_set = set(options)
-    valid_selected = [value for value in selected if value in option_set]
-    if valid_selected != selected:
-        st.session_state[key] = valid_selected
+    return [value for value in selected if value in option_set]
+
+
+def _session_filters(filter_columns: list[str]) -> dict[str, list[str]]:
+    return {
+        column: _normalize_filter_values(st.session_state.get(_filter_key(column)))
+        for column in filter_columns
+    }
+
+
+def _sync_linked_filter_state(
+    df: pd.DataFrame,
+    filter_columns: list[str],
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    filters = _session_filters(filter_columns)
+    options_by_column = _filter_options_with_context(df, filter_columns, filters)
+    for _ in range(len(filter_columns) + 1):
+        changed = False
+        for column in filter_columns:
+            pruned = _prune_filter_values(filters.get(column), options_by_column.get(column, []))
+            if pruned != filters.get(column, []):
+                filters[column] = pruned
+                st.session_state[_filter_key(column)] = pruned
+                changed = True
+        if not changed:
+            break
+        options_by_column = _filter_options_with_context(df, filter_columns, filters)
+    return filters, options_by_column
 
 
 def _render_linked_filters(df: pd.DataFrame, filter_columns: list[str]) -> dict[str, list[str]]:
-    filters: dict[str, list[str]] = {}
-    scoped = df.copy()
+    filters, options_by_column = _sync_linked_filter_state(df, filter_columns)
+    rendered_filters: dict[str, list[str]] = {}
     for column in filter_columns:
-        options = _options(scoped, column)
-        _prune_filter_selection(column, options)
+        options = options_by_column.get(column, [])
         if not options:
             continue
         selected = st.multiselect(column, options, key=_filter_key(column))
-        if selected:
-            filters[column] = selected
-            scoped = _apply_filters(scoped, {column: selected})
-    return filters
+        selected_values = _normalize_filter_values(selected)
+        if selected_values:
+            rendered_filters[column] = selected_values
+    return rendered_filters
 
 
 def _filter_errors(data_errors: pd.DataFrame, visible_skus: set[str]) -> pd.DataFrame:
