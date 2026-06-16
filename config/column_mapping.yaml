@@ -29,6 +29,14 @@ fields:
       - 产品线
       - 一级分类
       - 一级品线
+  size:
+    aliases:
+      - 尺寸
+      - 规格
+      - 规格尺寸
+      - 尺码
+      - Size
+      - size
   category_level_1:
     aliases:
       - 一级分类

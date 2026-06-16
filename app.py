@@ -13,6 +13,7 @@ from modules.loader import get_sheet_summaries, load_mapped_sheet, load_yaml
 from modules.parent_analysis import analyze_parent
 from modules.pipeline import build_overview, prepare_full_sku_table, run_analysis
 from modules.product_line_analysis import analyze_product_lines
+from modules.product_line_diagnosis import build_product_line_diagnosis
 from modules.sku_roles import build_sku_role_reports
 from modules.spu_analysis import analyze_spu
 from modules.validation import get_missing_required_fields
@@ -60,6 +61,7 @@ COLUMN_LABELS = {
     "parent_asin": "父ASIN",
     "spu": "SPU",
     "product_line": "品线",
+    "size": "尺寸/规格",
     "category_level_1": "一级分类",
     "product_name": "产品名称",
     "predicted_daily_sales": "预测日销量",
@@ -486,6 +488,66 @@ def _render_table(
     )
 
 
+def _format_core_metric_value(metric: str, value: Any) -> str:
+    if metric in {"利润率", "广告花费占比"}:
+        return _format_metric(value, percent=True)
+    if metric in {"销售额", "利润额", "广告花费"}:
+        return _format_metric(value, money=True)
+    return _format_metric(value)
+
+
+def _render_core_metrics_table(df: pd.DataFrame) -> None:
+    if df.empty:
+        st.info("当前品线暂无核心指标。")
+        return
+    display = df.copy()
+    display["数值"] = display.apply(lambda row: _format_core_metric_value(str(row.get("指标", "")), row.get("数值")), axis=1)
+    st.dataframe(display, use_container_width=True, hide_index=True, height=260)
+
+
+def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
+    st.divider()
+    st.subheader("品线经营诊断")
+    product_lines = _options(full, "product_line")
+    if not product_lines:
+        st.info("缺少品线字段或当前筛选下没有可分析的品线。")
+        return
+
+    selected_line = st.selectbox("选择一条品线", product_lines, key="product_line_diagnosis_line")
+    diagnosis = build_product_line_diagnosis(full, selected_line)
+
+    st.markdown("### 一、品线经营结论")
+    for index, sentence in enumerate(diagnosis["conclusions"], start=1):
+        st.markdown(f"{index}. {sentence}")
+
+    st.markdown("### 二、品线核心指标")
+    _render_core_metrics_table(diagnosis["core_metrics"])
+
+    st.markdown("### 三、SKU角色结构")
+    _render_table(diagnosis["role_structure"], height=300, table_key="product_line_role_structure")
+
+    with st.expander("规模贡献明细", expanded=False):
+        _render_table(diagnosis["sku_contribution"], height=420, table_key="product_line_sku_contribution")
+
+    st.markdown("### 四、重点问题SKU")
+    if diagnosis["problem_skus"].empty:
+        st.info("当前品线暂无明确重点问题 SKU。")
+    else:
+        _render_table(diagnosis["problem_skus"], height=480, table_key="product_line_problem_skus")
+
+    st.markdown("### 五、重点机会SKU")
+    if diagnosis["opportunity_skus"].empty:
+        st.info("当前品线暂无高置信度机会 SKU。")
+    else:
+        _render_table(diagnosis["opportunity_skus"], height=420, table_key="product_line_opportunity_skus")
+
+    st.markdown("### 六、行动清单")
+    if diagnosis["action_items"].empty:
+        st.info("当前品线暂无可生成的行动清单。")
+    else:
+        _render_table(diagnosis["action_items"], height=360, table_key="product_line_action_items")
+
+
 def main() -> None:
     st.set_page_config(page_title="Amazon Inventory Profit Analyzer", layout="wide")
     st.title("amazon-inventory-profit-analyzer")
@@ -571,6 +633,7 @@ def main() -> None:
     with tabs[6]:
         _render_table(report_tables["spu_analysis"], height=420, table_key="spu_analysis")
         _render_table(report_tables["product_line_analysis"], height=420, table_key="product_line_analysis")
+        _render_product_line_diagnosis(filtered_full)
         render_visualizations("SPU / 品线分析", report_tables)
     with tabs[7]:
         _render_table(report_tables["full_sku"], table_key="full_sku", enable_metric_selector=True)
