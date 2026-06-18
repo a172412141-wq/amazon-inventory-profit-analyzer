@@ -751,6 +751,16 @@ def _render_core_metrics_table(df: pd.DataFrame) -> None:
     st.dataframe(display, use_container_width=True, hide_index=True, height=260)
 
 
+def _render_narrative_summary(summary: dict[str, str], sections: list[tuple[str, str]]) -> None:
+    headline = summary.get("headline", "")
+    if headline:
+        st.info(headline)
+    for label, key in sections:
+        text = summary.get(key, "")
+        if text:
+            st.markdown(f"**{label}**  \n{text}")
+
+
 def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
     st.divider()
     st.subheader("品线经营诊断")
@@ -770,26 +780,37 @@ def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
         start_date=todo_start_date,
     )
 
-    st.markdown("### 一、数据可信度")
+    st.markdown("### 一、管理层汇报摘要")
+    _render_narrative_summary(
+        diagnosis["executive_summary"],
+        [
+            ("经营概况", "operating_snapshot"),
+            ("优先风险", "priority_risks"),
+            ("增长机会", "growth_opportunities"),
+            ("结论边界", "data_boundaries"),
+        ],
+    )
+
+    st.markdown("### 二、数据可信度")
     _render_table(diagnosis["data_credibility"], height=300, table_key="product_line_data_credibility")
 
-    st.markdown("### 二、品线经营结论")
+    st.markdown("### 三、品线经营结论展开")
     for index, sentence in enumerate(diagnosis["conclusions"], start=1):
         st.markdown(f"{index}. {sentence}")
 
-    st.markdown("### 三、品线核心指标")
+    st.markdown("### 四、品线核心指标")
     _render_core_metrics_table(diagnosis["core_metrics"])
 
-    st.markdown("### 四、经营关系诊断")
+    st.markdown("### 五、经营关系诊断")
     _render_table(diagnosis["relationship_diagnostics"], height=440, table_key="product_line_relationship_diagnostics")
 
-    st.markdown("### 五、SKU角色结构")
+    st.markdown("### 六、SKU角色结构")
     _render_table(diagnosis["role_structure"], height=300, table_key="product_line_role_structure")
 
     with st.expander("规模贡献明细", expanded=False):
         _render_table(diagnosis["sku_contribution"], height=420, table_key="product_line_sku_contribution")
 
-    st.markdown("### 六、重点问题与机会SKU")
+    st.markdown("### 七、重点问题与机会SKU")
     st.markdown("#### 重点问题SKU")
     if diagnosis["problem_skus"].empty:
         st.info("当前品线暂无明确重点问题 SKU。")
@@ -802,11 +823,21 @@ def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
     else:
         _render_table(diagnosis["opportunity_skus"], height=420, table_key="product_line_opportunity_skus")
 
-    st.markdown("### 七、品线 ToDo List")
+    st.markdown("### 八、品线 ToDo 执行汇报")
     todo_list = diagnosis["todo_list"]
+    _render_narrative_summary(
+        diagnosis["todo_summary"],
+        [
+            ("优先级", "priority_summary"),
+            ("责任分工", "ownership_summary"),
+            ("时间要求", "schedule_summary"),
+            ("执行重点", "execution_focus"),
+        ],
+    )
     if todo_list.empty:
         st.info("当前品线暂无可生成的 ToDo。")
     else:
+        st.markdown("#### ToDo 执行明细")
         editable_columns = {"状态", "负责人", "开始时间", "完成时间"}
         disabled_columns = [column for column in todo_list.columns if column not in editable_columns]
         st.data_editor(

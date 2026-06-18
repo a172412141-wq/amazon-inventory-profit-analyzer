@@ -221,3 +221,43 @@ def test_product_line_todo_contains_complete_action_fields_and_preserves_system_
     assert {"优先补货", "清货处理"}.issubset(set(todo["系统final_action"]))
     assert todo.iloc[0]["报告优先级"] == "P0"
     assert todo.iloc[0]["经营顺序"] == "周转"
+
+
+def test_product_line_diagnosis_provides_management_and_todo_narratives():
+    df = pd.DataFrame(
+        {
+            "sku": ["A", "B"],
+            "parent_asin": ["P1", "P1"],
+            "product_line": ["L1", "L1"],
+            "sku_role": ["主力 SKU", "低效异常 SKU"],
+            "sales_14d_amount": [500, 20],
+            "sales_14d_units": [50, 1],
+            "order_gross_profit": [80, -10],
+            "order_gross_margin": [0.16, -0.50],
+            "ad_spend": [30, 20],
+            "ad_sales": [200, 0],
+            "stock_days": [20, 200],
+            "available_qty": [20, 100],
+            "final_action": ["优先补货", "清货处理"],
+            "priority": ["P1", "P1"],
+        }
+    )
+
+    report = build_product_line_diagnosis(
+        df,
+        "L1",
+        owner="Fang",
+        start_date=date(2026, 6, 17),
+    )
+    management = report["executive_summary"]
+    todo_summary = report["todo_summary"]
+
+    assert set(management) == {"headline", "operating_snapshot", "priority_risks", "growth_opportunities", "data_boundaries"}
+    assert "L1" in management["headline"]
+    assert "P0/P1" in management["headline"]
+    assert "数据" in management["data_boundaries"]
+    assert "共形成" in todo_summary["headline"]
+    assert "P0" in todo_summary["priority_summary"]
+    assert "Fang" in todo_summary["ownership_summary"]
+    assert "2026-06-19" in todo_summary["schedule_summary"]
+    assert "首要执行项" in todo_summary["execution_focus"]

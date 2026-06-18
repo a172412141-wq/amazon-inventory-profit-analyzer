@@ -1305,6 +1305,112 @@ def _conclusions(
     ]
 
 
+def _executive_summary(
+    product_line: str,
+    conclusions: list[str],
+    data_credibility: pd.DataFrame,
+    relationship_diagnostics: pd.DataFrame,
+    opportunity_skus: pd.DataFrame,
+) -> dict[str, str]:
+    urgent = relationship_diagnostics[
+        relationship_diagnostics["报告优先级"].isin(["P0", "P1"])
+        & relationship_diagnostics["行动状态"].isin(["需处理", "待验证"])
+    ]
+    headline = (
+        f"{product_line} 当前识别出 {len(urgent)} 项 P0/P1 经营事项。"
+        if not urgent.empty
+        else f"{product_line} 当前未识别出 P0/P1 紧急经营事项。"
+    )
+    headline += " 汇报顺序建议先讲周转与利润风险，再讲规模机会和执行安排。"
+
+    operating_snapshot = " ".join(conclusions[:3])
+    if urgent.empty:
+        priority_risks = "当前没有需要升级汇报的 P0/P1 风险，继续按周复核库存、利润和广告效率。"
+    else:
+        risk_items = [
+            f"{row.get('报告优先级', '')} {row.get('诊断关系', '')}：{row.get('诊断判断', '')}（{row.get('原因等级', '')}）"
+            for _, row in urgent.head(3).iterrows()
+        ]
+        priority_risks = "优先风险：" + "；".join(risk_items) + "。"
+
+    if opportunity_skus.empty:
+        growth_opportunities = "增长机会：当前没有高置信度扩量对象，暂不建议为了规模追加资源。"
+    else:
+        opportunity_items = [
+            f"{row.get('SKU', '')}（{row.get('机会类型', '')}，置信度{row.get('置信度', '')}）"
+            for _, row in opportunity_skus.head(3).iterrows()
+        ]
+        growth_opportunities = "增长机会：优先验证 " + "、".join(opportunity_items) + "，达标后再扩大投入。"
+
+    credibility_issues = data_credibility[data_credibility["状态"] != "通过"]
+    if credibility_issues.empty:
+        data_boundaries = "数据边界：当前可信度检查均已通过，仍需保持销售、广告、利润和库存时间窗口一致。"
+    else:
+        issue_items = [
+            f"{row.get('检查项', '')}（{row.get('状态', '')}）"
+            for _, row in credibility_issues.head(4).iterrows()
+        ]
+        data_boundaries = "数据边界：" + "、".join(issue_items) + "尚未完全通过；相关结论用于确定验证方向，不表述为确定因果。"
+
+    return {
+        "headline": headline,
+        "operating_snapshot": operating_snapshot,
+        "priority_risks": priority_risks,
+        "growth_opportunities": growth_opportunities,
+        "data_boundaries": data_boundaries,
+    }
+
+
+def _todo_summary(todo_list: pd.DataFrame) -> dict[str, str]:
+    if todo_list.empty:
+        return {
+            "headline": "当前未形成需要执行的 ToDo。",
+            "priority_summary": "优先级：暂无。",
+            "ownership_summary": "负责人：暂无待分配任务。",
+            "schedule_summary": "时间要求：暂无。",
+            "execution_focus": "首要执行项：暂无。",
+        }
+
+    priority_counts = todo_list["报告优先级"].astype(str).value_counts()
+    priority_parts = [
+        f"{priority} {int(priority_counts.get(priority, 0))} 项"
+        for priority in ["P0", "P1", "P2", "P3"]
+        if int(priority_counts.get(priority, 0)) > 0
+    ]
+    urgent_count = int(todo_list["报告优先级"].isin(["P0", "P1"]).sum())
+    headline = f"共形成 {len(todo_list)} 项 ToDo，其中 {urgent_count} 项为 P0/P1，需要优先进入执行与复盘。"
+    priority_summary = "优先级分布：" + "、".join(priority_parts) + "。"
+
+    owners = todo_list["负责人"].astype("string").fillna("").str.strip()
+    assigned = sorted(value for value in owners.unique().tolist() if value and value != "待指定")
+    unassigned_count = int(owners.isin(["", "待指定"]).sum())
+    if assigned:
+        ownership_summary = "负责人：" + "、".join(assigned)
+        ownership_summary += f"；另有 {unassigned_count} 项待指定。" if unassigned_count else "；所有任务均已指定负责人。"
+    else:
+        ownership_summary = f"负责人：当前 {unassigned_count} 项任务均待指定。"
+
+    due_dates = pd.to_datetime(todo_list["完成时间"], errors="coerce").dropna()
+    if due_dates.empty:
+        schedule_summary = "时间要求：尚未形成有效完成时间，请先补齐计划日期。"
+    else:
+        nearest_due = due_dates.min().date().isoformat()
+        schedule_summary = f"时间要求：最近完成时间为 {nearest_due}；P0 按 2 天、P1 按 7 天节奏推进并按观察周期复盘。"
+
+    focus_items = [
+        f"{row.get('报告优先级', '')} {row.get('对象', '')}：{row.get('动作', '')}"
+        for _, row in todo_list.head(3).iterrows()
+    ]
+    execution_focus = "首要执行项：" + "；".join(focus_items) + "。"
+    return {
+        "headline": headline,
+        "priority_summary": priority_summary,
+        "ownership_summary": ownership_summary,
+        "schedule_summary": schedule_summary,
+        "execution_focus": execution_focus,
+    }
+
+
 def build_product_line_diagnosis(
     df: pd.DataFrame,
     product_line: str,
@@ -1317,9 +1423,18 @@ def build_product_line_diagnosis(
     line_df = _line_scope(prepared, product_line)
     if line_df.empty:
         empty = pd.DataFrame()
+        empty_conclusions = [f"未找到品线：{product_line}。"]
         return {
             "product_line": product_line,
-            "conclusions": [f"未找到品线：{product_line}。"],
+            "conclusions": empty_conclusions,
+            "executive_summary": {
+                "headline": empty_conclusions[0],
+                "operating_snapshot": "当前没有可汇报的经营数据。",
+                "priority_risks": "优先风险：无法判断。",
+                "growth_opportunities": "增长机会：无法判断。",
+                "data_boundaries": "数据边界：请先确认品线名称和输入范围。",
+            },
+            "todo_summary": _todo_summary(empty),
             "data_credibility": empty,
             "core_metrics": empty,
             "relationship_diagnostics": empty,
@@ -1347,9 +1462,18 @@ def build_product_line_diagnosis(
         owner,
         todo_start_date,
     )
+    conclusions = _conclusions(product_line, line_df, core_metrics, problem_skus, opportunity_skus)
     return {
         "product_line": product_line,
-        "conclusions": _conclusions(product_line, line_df, core_metrics, problem_skus, opportunity_skus),
+        "conclusions": conclusions,
+        "executive_summary": _executive_summary(
+            product_line,
+            conclusions,
+            data_credibility,
+            relationship_diagnostics,
+            opportunity_skus,
+        ),
+        "todo_summary": _todo_summary(todo_list),
         "data_credibility": data_credibility,
         "core_metrics": core_metrics,
         "relationship_diagnostics": relationship_diagnostics,

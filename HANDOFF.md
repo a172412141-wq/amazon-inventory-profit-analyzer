@@ -4,19 +4,21 @@
 
 ## 当前目标
 
-继续完善 Amazon 库存利润分析器。本次修复 Fang 品线诊断的数据可信度计算，避免把清洗阶段补为 0 的原始缺失值误判为已提供数据；底层指标、SKU 角色、系统动作和优先级保持不变。
+继续完善 Amazon 库存利润分析器。本次把 Fang 品线诊断从“表格明细”升级为“先汇报、后明细”：增加管理层文字摘要和 ToDo 执行摘要，同时保留现有指标、诊断表和可编辑任务明细；底层指标、SKU 角色、系统动作和优先级保持不变。
 
 ## 仓库状态
 
 - 项目仓库：当前目录 `amazon-inventory-profit-analyzer/`。
-- 发布分支：`main`；本次修改前基线为 `86183f8 Redesign Streamlit decision workspace`，当时与 `origin/main` 同步。
+- 当前分支：`codex/fix-fang-data-credibility`，已推送并创建草稿 PR #1；本次汇报改造基于 `af7bda4 Fix Fang data credibility checks`。
+- 目标发布分支：`main`。
 - 外层 `New project/` 还有一个独立旧仓库；它不是本项目提交和状态判断的依据。
 
-当前跟踪文件工作区变更：
+本次汇报改造范围：
 
-- `modules/product_line_diagnosis.py`：完整率同时检查字段值与 `_missing_<field>`；派生可售库存天数仅在销量和库存来源字段真实存在时计入完整率。
-- `tests/test_product_line_diagnosis.py`：增加“缺失后补 0”与“真实 0”并存时的完整率回归测试。
-- `HANDOFF.md`：记录本次修复、验证结果和下一步。
+- `modules/product_line_diagnosis.py`：新增管理层摘要和 ToDo 执行摘要，汇总经营概况、优先风险、增长机会、数据边界、任务数量、优先级、责任人、截止日和首要动作。
+- `app.py`：品线诊断调整为先展示管理层汇报摘要；ToDo 区先展示执行摘要，再展示可编辑明细。
+- `tests/test_product_line_diagnosis.py`：增加文字汇报和 ToDo 摘要回归测试。
+- `HANDOFF.md`：记录本次汇报层改造、验证结果和下一步。
 
 当前未跟踪内容（本次未修改、未接入现有应用）：
 
@@ -47,11 +49,11 @@
 ## 已验证
 
 - `.venv/bin/python -c "import app"`：通过。
-- `.venv/bin/python -m pytest -q -p no:cacheprovider`：原生运行 46 个测试，全部通过。
-- `tests/test_product_line_diagnosis.py`：7 个定向测试全部通过；新增用例确认缺失后补 0 不计入完整率、原始真实 0 仍计为已提供。
+- `.venv/bin/python -m pytest -q -p no:cacheprovider`：原生运行 47 个测试，全部通过。
+- `tests/test_product_line_diagnosis.py`：8 个定向测试全部通过；覆盖数据可信度、管理层摘要、ToDo 摘要和报告层不改写系统判断。
 - Excel 11 Sheet 内存导出冒烟：通过。
 - Streamlit 本地启动成功，`/_stcore/health` 返回 `ok`。
-- 浏览器复核新版上传首页：标题、价值说明、上传区、三步流程与检查清单均正常显示，控制台无错误。
+- 浏览器复核上传首页：应用正常启动，标题、上传区和使用说明正常显示，控制台无错误。因仓库无样例 Excel，本次未通过浏览器进入品线汇报页。
 - `git diff --check` 通过。
 
 ## 剩余风险
@@ -74,15 +76,22 @@
 - 表格空状态、文件识别、分析等待、数据缺失和导出文案已统一优化。
 - 仅改变展示层，不修改指标公式、角色分类、动作或优先级。
 
+## 本次品线汇报优化
+
+- 管理层摘要用文字汇报经营概况、P0/P1 风险、增长机会和数据边界，放在所有明细表之前。
+- 原有五条品线经营结论保留为“经营结论展开”，用于补充口径和事实。
+- ToDo 摘要用文字汇报任务总量、P0/P1 数量、优先级分布、负责人、最近完成时间和前三项执行重点。
+- 可编辑 ToDo 表继续作为执行明细，字段和生成逻辑不变。
+
 ## 本轮发布验收
 
 - 动作模块恢复且规则不变：通过。
 - 应用导入与服务健康检查：通过。
-- 全量 46 个测试：通过。
+- 全量 47 个测试：通过。
 - Fang 诊断不改写 `sku_role`、`final_action`、`priority`：测试覆盖并通过。
 - 三级分类映射、完整 SKU 输出和跨维度联动：测试覆盖并通过。
 - Excel 导出与 `git diff --check`：通过。
 
 ## 后续候选任务
 
-先确认 ToDo 是仅会话编辑，还是需要纳入 Excel 导出或其他持久化，再实现对应闭环；同时确认未跟踪 `fang_diagnosis/` 原型与当前品线诊断的关系。对应阶段见 `PLANS.md`。
+准备一份可提交的脱敏样例 Excel，对管理层摘要、ToDo 摘要和完整上传路径做浏览器端到端验收；随后确认 ToDo 是仅会话编辑，还是需要纳入 Excel 导出或其他持久化。同时确认未跟踪 `fang_diagnosis/` 原型与当前品线诊断的关系。对应阶段见 `PLANS.md`。
