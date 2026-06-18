@@ -55,6 +55,20 @@ PINNED_SKU_COLUMNS = [
     "aged_inventory_181_plus",
     "reason",
 ]
+FILTER_COLUMNS = [
+    "parent_asin",
+    "asin",
+    "spu",
+    "product_line",
+    "category_level_3",
+    "sku_role",
+    "final_action",
+    "priority",
+    "inventory_status",
+    "margin_level",
+    "turnover_level",
+    "cashflow_risk_level",
+]
 COLUMN_LABELS = {
     "sku": "SKU",
     "asin": "ASIN",
@@ -63,6 +77,7 @@ COLUMN_LABELS = {
     "product_line": "品线",
     "size": "尺寸/规格",
     "category_level_1": "一级分类",
+    "category_level_3": "三级分类",
     "product_name": "产品名称",
     "predicted_daily_sales": "预测日销量",
     "stock_days": "库存天数",
@@ -514,38 +529,71 @@ def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
         return
 
     selected_line = st.selectbox("选择一条品线", product_lines, key="product_line_diagnosis_line")
-    diagnosis = build_product_line_diagnosis(full, selected_line)
+    owner_col, date_col = st.columns(2)
+    default_owner = owner_col.text_input("默认负责人", value="待指定", key="product_line_todo_owner")
+    todo_start_date = date_col.date_input("计划开始日期", value=datetime.now().date(), key="product_line_todo_start_date")
+    diagnosis = build_product_line_diagnosis(
+        full,
+        selected_line,
+        owner=default_owner,
+        start_date=todo_start_date,
+    )
 
-    st.markdown("### 一、品线经营结论")
+    st.markdown("### 一、数据可信度")
+    _render_table(diagnosis["data_credibility"], height=300, table_key="product_line_data_credibility")
+
+    st.markdown("### 二、品线经营结论")
     for index, sentence in enumerate(diagnosis["conclusions"], start=1):
         st.markdown(f"{index}. {sentence}")
 
-    st.markdown("### 二、品线核心指标")
+    st.markdown("### 三、品线核心指标")
     _render_core_metrics_table(diagnosis["core_metrics"])
 
-    st.markdown("### 三、SKU角色结构")
+    st.markdown("### 四、经营关系诊断")
+    _render_table(diagnosis["relationship_diagnostics"], height=440, table_key="product_line_relationship_diagnostics")
+
+    st.markdown("### 五、SKU角色结构")
     _render_table(diagnosis["role_structure"], height=300, table_key="product_line_role_structure")
 
     with st.expander("规模贡献明细", expanded=False):
         _render_table(diagnosis["sku_contribution"], height=420, table_key="product_line_sku_contribution")
 
-    st.markdown("### 四、重点问题SKU")
+    st.markdown("### 六、重点问题与机会SKU")
+    st.markdown("#### 重点问题SKU")
     if diagnosis["problem_skus"].empty:
         st.info("当前品线暂无明确重点问题 SKU。")
     else:
         _render_table(diagnosis["problem_skus"], height=480, table_key="product_line_problem_skus")
 
-    st.markdown("### 五、重点机会SKU")
+    st.markdown("#### 重点机会SKU")
     if diagnosis["opportunity_skus"].empty:
         st.info("当前品线暂无高置信度机会 SKU。")
     else:
         _render_table(diagnosis["opportunity_skus"], height=420, table_key="product_line_opportunity_skus")
 
-    st.markdown("### 六、行动清单")
-    if diagnosis["action_items"].empty:
-        st.info("当前品线暂无可生成的行动清单。")
+    st.markdown("### 七、品线 ToDo List")
+    todo_list = diagnosis["todo_list"]
+    if todo_list.empty:
+        st.info("当前品线暂无可生成的 ToDo。")
     else:
-        _render_table(diagnosis["action_items"], height=360, table_key="product_line_action_items")
+        editable_columns = {"状态", "负责人", "开始时间", "完成时间"}
+        disabled_columns = [column for column in todo_list.columns if column not in editable_columns]
+        st.data_editor(
+            todo_list,
+            use_container_width=True,
+            hide_index=True,
+            height=520,
+            num_rows="fixed",
+            disabled=disabled_columns,
+            column_config={
+                "状态": st.column_config.SelectboxColumn(
+                    "状态",
+                    options=["待开始", "进行中", "已完成", "已暂停"],
+                    required=True,
+                ),
+            },
+            key=f"product_line_todo_editor_{selected_line}",
+        )
 
 
 def main() -> None:
@@ -587,20 +635,7 @@ def main() -> None:
     full = analysis["full"]
     with st.sidebar:
         st.header("筛选")
-        filter_columns = [
-            "parent_asin",
-            "asin",
-            "spu",
-            "product_line",
-            "sku_role",
-            "final_action",
-            "priority",
-            "inventory_status",
-            "margin_level",
-            "turnover_level",
-            "cashflow_risk_level",
-        ]
-        filters = _render_linked_filters(full, filter_columns)
+        filters = _render_linked_filters(full, FILTER_COLUMNS)
 
     filtered_full = _apply_filters(full, filters)
     report_tables, overview_metrics, overview_summary = _build_filtered_tables(

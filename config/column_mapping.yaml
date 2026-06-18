@@ -42,6 +42,14 @@ fields:
       - 一级分类
       - 一级品类
       - category_level_1
+  category_level_3:
+    aliases:
+      - 三级分类
+      - 三级品类
+      - 三级类目
+      - 三级分类名称
+      - Category Level 3
+      - category_level_3
   product_name:
     aliases:
       - 产品名称

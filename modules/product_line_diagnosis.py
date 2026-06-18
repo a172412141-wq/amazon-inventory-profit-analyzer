@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 from math import ceil
 from typing import Any
 
@@ -7,7 +8,8 @@ import numpy as np
 import pandas as pd
 
 
-PROBLEM_PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2}
+PROBLEM_PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
+BUSINESS_PRIORITY_ORDER = {"周转": 0, "规模": 1, "毛利润": 2, "毛利率": 3, "数据可信度": 4}
 RISK_ACTIONS = {"清货处理", "禁止补货", "高毛利停补", "控广告", "暂缓补货"}
 URGENT_ACTIONS = {"立即补货", "优先补货"}
 ROLE_ORDER = ["引流 SKU", "主力 SKU", "利润 SKU", "低效异常 SKU"]
@@ -519,6 +521,39 @@ def _impact(row: pd.Series) -> str:
     return "影响中低，适合放入常规优化队列。"
 
 
+def _cause_level_for_sku(row: pd.Series) -> str:
+    stock_days = row.get("_stock_days", np.nan)
+    direct_fact = (
+        row.get("_gross_profit", 0.0) < 0
+        or row.get("_final_action", "") in RISK_ACTIONS | URGENT_ACTIONS
+        or (not pd.isna(stock_days) and (stock_days > 90 or stock_days < 30))
+    )
+    if direct_fact:
+        return "已确认原因"
+    if row.get("confidence") == "低" and row.get("comparison_ok_count", 0) <= 1:
+        return "无法判断"
+    if row.get("ad_sales_mismatch", 0.0) >= 0.15 and row.get("comparison_ok_count", 0) >= 2:
+        return "高概率原因"
+    if row.get("confidence") == "低":
+        return "待验证假设"
+    return "高概率原因"
+
+
+def _sku_validation_action(row: pd.Series) -> str:
+    missing: list[str] = []
+    if "缺少尺寸" in str(row.get("size_compare", "")):
+        missing.append("尺寸/规格")
+    if "不足3个" in str(row.get("price_compare", "")):
+        missing.append("更多同价格带样本")
+    if row.get("cause_level") == "已确认原因":
+        return "固定同一观察窗口复核指标，并按系统动作执行后记录结果。"
+    if row.get("ad_sales_mismatch", 0.0) >= 0.15:
+        return "固定7天广告窗口，拆分核心词与低转化词，比较调整前后销量、ACOAS和毛利润。"
+    if missing:
+        return "补充" + "、".join(missing) + "后再做同父体、同品线、同规格和价格带复核。"
+    return "采用单SKU小范围测试并保留对照，观察销量、毛利润、ACOAS和库存天数。"
+
+
 def _build_sku_analysis(line_df: pd.DataFrame, prepared: pd.DataFrame) -> pd.DataFrame:
     if line_df.empty:
         return pd.DataFrame()
@@ -541,6 +576,8 @@ def _build_sku_analysis(line_df: pd.DataFrame, prepared: pd.DataFrame) -> pd.Dat
     result["problem_judgement"] = result.apply(_judgement, axis=1)
     result["suggested_action"] = result.apply(_suggested_action, axis=1)
     result["business_impact"] = result.apply(_impact, axis=1)
+    result["cause_level"] = result.apply(_cause_level_for_sku, axis=1)
+    result["validation_action"] = result.apply(_sku_validation_action, axis=1)
     return result
 
 
@@ -607,6 +644,8 @@ def _problem_skus(sku_analysis: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
             "尺寸比较": selected["size_compare"],
             "价格带比较": selected["price_compare"],
             "问题判断": selected["problem_judgement"],
+            "原因等级": selected["cause_level"],
+            "验证动作": selected["validation_action"],
             "经营影响": selected["business_impact"],
             "建议动作": selected["suggested_action"],
             "问题优先级": selected["problem_priority"],
@@ -704,6 +743,520 @@ def _action_items(problem_skus: pd.DataFrame, opportunity_skus: pd.DataFrame) ->
     return pd.DataFrame(rows)
 
 
+def _field_completeness(df: pd.DataFrame, column: str) -> float:
+    if column not in df.columns or df.empty:
+        return 0.0
+    values = df[column]
+    if pd.api.types.is_numeric_dtype(values):
+        return float(pd.to_numeric(values, errors="coerce").notna().mean())
+    text_values = values.astype("string").fillna("").str.strip()
+    return float((~text_values.isin(["", "nan", "none", "<NA>"])).mean())
+
+
+def _data_credibility(df: pd.DataFrame, product_line: str) -> pd.DataFrame:
+    if "product_line" in df.columns:
+        line_mask = df["product_line"].astype("string").fillna("").str.strip().eq(str(product_line).strip())
+        source = df[line_mask].copy()
+    else:
+        source = pd.DataFrame()
+
+    def add_check(
+        item: str,
+        status: str,
+        completeness: float | None,
+        fact: str,
+        gap: str,
+        handling: str,
+    ) -> dict[str, Any]:
+        return {
+            "检查项": item,
+            "状态": status,
+            "完整率": completeness,
+            "已确认事实": fact,
+            "缺失或冲突": gap,
+            "当前处理": handling,
+        }
+
+    sku_ratio = _field_completeness(source, "sku")
+    parent_ratio = _field_completeness(source, "parent_asin")
+    profit_ratio = min(_field_completeness(source, "order_gross_profit"), _field_completeness(source, "order_gross_margin"))
+    inventory_ratio = max(_field_completeness(source, "available_stock_days"), _field_completeness(source, "stock_days"))
+    size_ratio = _field_completeness(source, "size")
+    sales_ratio = max(_field_completeness(source, "sales_14d_amount"), _field_completeness(source, "sales_7d_amount"))
+    ad_ratio = min(_field_completeness(source, "ad_spend"), _field_completeness(source, "ad_sales"))
+
+    checks = [
+        add_check(
+            "SKU映射",
+            "通过" if sku_ratio >= 0.99 else "无法判断",
+            sku_ratio,
+            f"SKU字段完整率 {_fmt_pct(sku_ratio)}。",
+            "" if sku_ratio >= 0.99 else "存在空SKU，无法稳定定位行动对象。",
+            "保留现有SKU映射" if sku_ratio >= 0.99 else "先补齐SKU并复核重复映射。",
+        ),
+        add_check(
+            "父体映射",
+            "通过" if parent_ratio >= 0.95 else "待补充",
+            parent_ratio,
+            f"父ASIN完整率 {_fmt_pct(parent_ratio)}。",
+            "" if parent_ratio >= 0.95 else "部分SKU无法完成父体横向比较。",
+            "保留父体比较" if parent_ratio >= 0.95 else "补齐父ASIN后重新生成父体比较。",
+        ),
+        add_check(
+            "销售与广告时间窗口",
+            "待确认",
+            min(sales_ratio, ad_ratio),
+            f"销售字段完整率 {_fmt_pct(sales_ratio)}，广告字段完整率 {_fmt_pct(ad_ratio)}。",
+            "缺少报表起止日期和广告归因周期，无法确认销售与广告是否属于同一窗口。",
+            "当前仅输出关系异常，不把广告与销量变化描述为确定因果。",
+        ),
+        add_check(
+            "利润口径",
+            "待确认" if profit_ratio >= 0.95 else "无法判断",
+            profit_ratio,
+            f"毛利润与毛利率字段完整率 {_fmt_pct(profit_ratio)}。",
+            "无法确认毛利润是否包含广告费、平台费、仓储费、促销成本和退款。",
+            "使用现有毛利润判断实际贡献，同时要求运营确认利润公式。",
+        ),
+        add_check(
+            "库存口径",
+            "通过" if inventory_ratio >= 0.95 else "无法判断",
+            inventory_ratio,
+            f"库存天数字段完整率 {_fmt_pct(inventory_ratio)}。",
+            "" if inventory_ratio >= 0.95 else "缺少可售库存天数，周转优先级无法可靠判断。",
+            "优先使用可售库存天数" if inventory_ratio >= 0.95 else "补充可售库存、在途和7天日均销量。",
+        ),
+        add_check(
+            "尺寸/规格比较",
+            "通过" if size_ratio >= 0.8 else "待补充",
+            size_ratio,
+            f"尺寸/规格字段完整率 {_fmt_pct(size_ratio)}。",
+            "" if size_ratio >= 0.8 else "同尺寸样本不足时不得输出确定性尺寸结论。",
+            "使用同尺寸比较" if size_ratio >= 0.8 else "标记低置信度并补充尺寸/规格字段。",
+        ),
+        add_check(
+            "自身历史对比",
+            "待补充",
+            None,
+            "当前文件主要是截面数据。",
+            "缺少连续历史窗口、活动期、断货期和调价期标记。",
+            "不把短期波动写成趋势因果；建议补充至少4周历史数据。",
+        ),
+    ]
+    return pd.DataFrame(checks)
+
+
+def _relationship_diagnostics(
+    line_df: pd.DataFrame,
+    sku_analysis: pd.DataFrame,
+    data_credibility: pd.DataFrame,
+    opportunity_skus: pd.DataFrame,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+
+    def add(
+        business_order: str,
+        relation: str,
+        fact: str,
+        cause_level: str,
+        diagnosis: str,
+        impact: str,
+        missing: str,
+        validation: str,
+        action: str,
+        priority: str,
+        status: str,
+    ) -> None:
+        rows.append(
+            {
+                "经营顺序": business_order,
+                "诊断关系": relation,
+                "已确认事实": fact,
+                "原因等级": cause_level,
+                "诊断判断": diagnosis,
+                "经营影响": impact,
+                "缺失数据": missing,
+                "验证动作": validation,
+                "建议动作": action,
+                "报告优先级": priority,
+                "行动状态": status,
+            }
+        )
+
+    stock_days = pd.to_numeric(line_df["_stock_days"], errors="coerce")
+    inventory_qty = pd.to_numeric(line_df["_inventory_qty"], errors="coerce").fillna(0.0)
+    over_180 = int((stock_days > 180).sum())
+    over_90 = int((stock_days > 90).sum())
+    main_stockout = int(((sku_analysis["_sku_role"] == "主力 SKU") & (sku_analysis["_stock_days"] < 30)).sum())
+    weighted_stock_days = _safe_divide((stock_days.fillna(0.0) * inventory_qty).sum(), inventory_qty.sum())
+    if over_180 > 0 or main_stockout > 0:
+        add(
+            "周转",
+            "库存-销量-资金",
+            f"加权库存天数 {_fmt_number(weighted_stock_days)}；180天以上SKU {over_180}个；主力缺货风险SKU {main_stockout}个。",
+            "已确认原因",
+            "品线存在超长库存或核心SKU缺货风险，资金效率与规模承接发生冲突。",
+            "可能造成资金长期占用，或因主力断货损失排名与规模。",
+            "补货周期、活动计划、未来流量计划",
+            "逐SKU核对在途、补货周期和未来14天日销量计划。",
+            "先执行系统库存动作；超长库存停补清理，主力缺货优先保障库存和核心流量。",
+            "P0",
+            "需处理",
+        )
+    elif over_90 > 0:
+        add(
+            "周转",
+            "库存-销量-资金",
+            f"加权库存天数 {_fmt_number(weighted_stock_days)}；90天以上SKU {over_90}个。",
+            "高概率原因",
+            "库存消化速度可能低于资金承诺，需验证未来销量计划能否覆盖库存。",
+            "现金占用增加，继续补货可能恶化周转。",
+            "补货周期、活动计划和目标日销量",
+            "按SKU测算30/60/90天库存消化目标并与实际日销量对比。",
+            "控制补货，优先通过有效广告、价格或活动计划加速周转。",
+            "P1",
+            "需处理",
+        )
+    else:
+        add(
+            "周转",
+            "库存-销量-资金",
+            f"加权库存天数 {_fmt_number(weighted_stock_days)}，当前未发现90天以上SKU。",
+            "已确认原因",
+            "当前库存处于可承接区间。",
+            "周转风险暂时可控。",
+            "补货周期与未来活动计划",
+            "持续按7天窗口复核库存天数。",
+            "维持当前库存纪律，不因高毛利盲目补货。",
+            "P3",
+            "正常",
+        )
+
+    line_sales = float(line_df["_sales_amount"].sum())
+    _, top_sales_share = _top_contribution(line_df["_sales_amount"], line_sales)
+    main_sales_share = float(sku_analysis.loc[sku_analysis["_sku_role"] == "主力 SKU", "sales_share_line"].sum())
+    if not pd.isna(top_sales_share) and top_sales_share >= 0.8:
+        add(
+            "规模",
+            "规模-集中度-角色",
+            f"销售额前20% SKU贡献 {_fmt_pct(top_sales_share)}；主力SKU销售额贡献 {_fmt_pct(main_sales_share)}。",
+            "高概率原因",
+            "品线规模高度依赖少数SKU，需要确认核心SKU库存和流量承接是否稳定。",
+            "单SKU波动可能显著影响整条品线规模。",
+            "自身历史趋势、活动期和断货期标记",
+            "固定4周窗口比较核心SKU销量、CVR、库存和广告效率。",
+            "保护核心SKU库存与有效流量，同时减少非核心SKU对资源的分流。",
+            "P1",
+            "需处理",
+        )
+    else:
+        add(
+            "规模",
+            "规模-集中度-角色",
+            f"销售额前20% SKU贡献 {_fmt_pct(top_sales_share)}；主力SKU销售额贡献 {_fmt_pct(main_sales_share)}。",
+            "已确认原因",
+            "当前规模集中度未达到高度依赖水平。",
+            "品线对单一SKU的依赖相对可控。",
+            "自身历史趋势",
+            "按周观察主力SKU销售额贡献变化。",
+            "维持资源集中度，避免无依据地平均分配广告和库存。",
+            "P3",
+            "正常",
+        )
+
+    line_profit = float(line_df["_gross_profit"].sum())
+    line_margin = _safe_divide(line_profit, line_sales)
+    negative_profit_count = int((line_df["_gross_profit"] < 0).sum())
+    if line_profit <= 0:
+        add(
+            "毛利润",
+            "规模-毛利润",
+            f"品线毛利润 {_fmt_number(line_profit)}；亏损SKU {negative_profit_count}个；加权毛利率 {_fmt_pct(line_margin)}。",
+            "已确认原因",
+            "品线当前没有形成正向实际利润贡献。",
+            "继续扩大规模可能放大亏损并占用现金。",
+            "完整成本构成与退款、促销成本",
+            "复核毛利润公式，并拆分价格、成本、广告和促销影响。",
+            "暂停无利润支撑的扩量，优先修复单位利润和广告资源错配。",
+            "P0",
+            "需处理",
+        )
+    elif negative_profit_count > 0:
+        add(
+            "毛利润",
+            "规模-毛利润",
+            f"品线毛利润 {_fmt_number(line_profit)}；仍有 {negative_profit_count} 个亏损SKU。",
+            "高概率原因",
+            "正利润SKU可能在补贴亏损SKU，需要识别亏损是否承担明确引流或战略价值。",
+            "亏损SKU会稀释品线现金贡献。",
+            "完整成本构成、引流带动价值",
+            "比较亏损SKU广告、销量和父体支持贡献，确认是否值得保留。",
+            "保留有明确带动价值的引流SKU；其余亏损SKU限期修复或退出。",
+            "P1",
+            "需处理",
+        )
+    else:
+        add(
+            "毛利润",
+            "规模-毛利润",
+            f"品线毛利润 {_fmt_number(line_profit)}，当前SKU均未出现负毛利润。",
+            "已确认原因",
+            "品线当前形成正向利润贡献。",
+            "利润风险暂时可控。",
+            "完整成本构成",
+            "持续复核毛利润而非只看毛利率。",
+            "优先扩大能同时贡献规模、毛利润和周转的SKU。",
+            "P3",
+            "正常",
+        )
+
+    line_ad_spend = float(line_df["_ad_spend"].sum())
+    line_acoas = _safe_divide(line_ad_spend, line_sales)
+    ad_mismatch_count = int((sku_analysis["ad_sales_mismatch"] >= 0.15).sum())
+    if line_ad_spend > 0 and not pd.isna(line_margin) and line_acoas >= line_margin:
+        add(
+            "毛利润",
+            "广告-销售-利润",
+            f"品线ACOAS {_fmt_pct(line_acoas)}，加权毛利率 {_fmt_pct(line_margin)}；广告错配SKU {ad_mismatch_count}个。",
+            "高概率原因",
+            "广告花费占销售额比例已触及或超过利润空间，广告可能放大利润压力。",
+            "继续按历史结构投放可能挤压实际毛利润。",
+            "广告归因周期、自然订单变化、搜索词明细",
+            "固定7天窗口拆分广告与自然销量，验证核心词和低效词的真实贡献。",
+            "保留核心流量，降低高花费低转化投放，并对无订单搜索词做否定。",
+            "P1" if line_profit > 0 else "P0",
+            "需处理",
+        )
+    elif ad_mismatch_count > 0:
+        add(
+            "毛利润",
+            "广告-销售-利润",
+            f"品线ACOAS {_fmt_pct(line_acoas)}；{ad_mismatch_count}个SKU广告贡献比销售贡献高15个百分点以上。",
+            "高概率原因",
+            "广告资源可能没有投向最有承接能力的SKU。",
+            "资源错配会降低品线投入回报。",
+            "搜索词、自然订单和广告归因周期",
+            "对比调整前后销量、CVR、ACOAS和毛利润。",
+            "从低效异常SKU回收预算，优先保障主力SKU和可承接的利润SKU。",
+            "P1",
+            "需处理",
+        )
+    else:
+        add(
+            "毛利润",
+            "广告-销售-利润",
+            f"品线ACOAS {_fmt_pct(line_acoas)}，未发现明显广告销售贡献错配。",
+            "已确认原因",
+            "当前广告投入与销售贡献关系相对匹配。",
+            "广告风险暂时可控。",
+            "自然订单变化和广告归因周期",
+            "维持7天复核窗口。",
+            "保持角色化预算分配，不按历史预算惯性延续。",
+            "P3",
+            "正常",
+        )
+
+    high_margin_slow = sku_analysis[(sku_analysis["_gross_margin"] > line_margin) & (sku_analysis["_stock_days"] > 90)]
+    if not high_margin_slow.empty:
+        add(
+            "毛利率",
+            "毛利率-周转",
+            f"{len(high_margin_slow)}个SKU毛利率高于品线但库存天数超过90天。",
+            "已确认原因",
+            "高毛利没有转化为有效周转和现金回收。",
+            "账面利润空间被库存占用。",
+            "未来活动计划和目标日销量",
+            "为每个SKU测算60/90天库存消化所需日销量。",
+            "停止把高毛利等同于优质SKU；控制补货并设计低风险周转实验。",
+            "P1",
+            "需处理",
+        )
+
+    credibility_issues = data_credibility[data_credibility["状态"] != "通过"]
+    critical_data_issue = credibility_issues[
+        credibility_issues["检查项"].isin(["SKU映射", "利润口径", "库存口径"])
+        & credibility_issues["状态"].eq("无法判断")
+    ]
+    if not credibility_issues.empty:
+        add(
+            "数据可信度",
+            "数据-结论",
+            f"{len(credibility_issues)}项数据检查未完全通过。",
+            "无法判断" if not critical_data_issue.empty else "待验证假设",
+            "部分经营结论只能作为验证方向，不能描述为确定因果。",
+            "错误口径可能导致错误补货、停投或调价。",
+            "；".join(credibility_issues["缺失或冲突"].astype(str).tolist()),
+            "先补齐关键字段并固定销售、广告、利润和库存的同一时间窗口。",
+            "仅执行低风险动作；对不可逆动作等待数据确认。",
+            "P0" if not critical_data_issue.empty else "P3",
+            "待验证",
+        )
+
+    if not opportunity_skus.empty:
+        top = opportunity_skus.iloc[0]
+        add(
+            "规模",
+            "资源-机会",
+            f"发现 {len(opportunity_skus)} 个机会SKU；首要机会为 {top.get('SKU', '')}（{top.get('机会类型', '')}）。",
+            "高概率原因" if top.get("置信度") != "低" else "待验证假设",
+            "存在已有承接能力但资源不足的SKU，可通过局部实验验证扩量。",
+            "若验证成立，可提升规模和毛利润而不显著破坏周转。",
+            "实验前后自然销量、CVR和广告关键词明细",
+            "选择单SKU和对照SKU，固定7-14天观察窗口。",
+            "小预算增加高转化关键词覆盖，达到标准后再扩大。",
+            "P1" if top.get("置信度") != "低" else "P2",
+            "机会",
+        )
+
+    result = pd.DataFrame(rows)
+    if result.empty:
+        return result
+    result["_priority_sort"] = result["报告优先级"].map(PROBLEM_PRIORITY_ORDER).fillna(9)
+    result["_business_sort"] = result["经营顺序"].map(BUSINESS_PRIORITY_ORDER).fillna(9)
+    return result.sort_values(["_priority_sort", "_business_sort"]).drop(columns=["_priority_sort", "_business_sort"])
+
+
+def _todo_success_standard(problem: str, action: str) -> str:
+    text = f"{problem} {action}"
+    if "库存" in text or "补货" in text or "断货" in text:
+        return "可售库存天数进入30-90天目标区间；主力SKU无断货；不新增90天以上库存。"
+    if "广告" in text or "投放" in text or "搜索词" in text:
+        return "广告资源错配值降至10个百分点以内；ACOAS低于可承受利润空间；毛利润不下降。"
+    if "利润" in text or "成本" in text:
+        return "毛利润转正或较基准期改善；销售额不出现不可接受下降。"
+    if "规模" in text or "流量" in text or "扩量" in text:
+        return "销量和销售额较基准期提升，同时毛利润不下降、库存天数不低于30天。"
+    if "数据" in text or "字段" in text or "口径" in text:
+        return "关键字段完整率达到95%以上，销售/广告/利润/库存时间窗口得到确认。"
+    return "目标指标较基准期改善，并且周转、毛利润和风险指标未恶化。"
+
+
+def _todo_failure_plan(problem: str, action: str) -> str:
+    text = f"{problem} {action}"
+    if "广告" in text or "扩量" in text:
+        return "若观察期内ACOAS上升、毛利润下降或库存低于30天，恢复原预算并停止扩量。"
+    if "价格" in text or "促销" in text:
+        return "若销量提升不足以覆盖利润损失，恢复原价并停止同类SKU扩展。"
+    if "库存" in text or "补货" in text:
+        return "若实际销量未达到消化目标，继续停补并升级清货；若出现缺货风险，缩减广告并调整补货节奏。"
+    if "数据" in text or "字段" in text:
+        return "关键口径仍无法确认时，不执行不可逆的停投、清货或全量调价。"
+    return "若成功标准未达到，缩小范围、恢复原方案或终止实验，并记录失败原因。"
+
+
+def _todo_schedule(priority: str, start_date: date) -> tuple[str, str, str]:
+    days_by_priority = {"P0": 2, "P1": 7, "P2": 14, "P3": 30}
+    observation_by_priority = {"P0": "3天", "P1": "7天", "P2": "14天", "P3": "14-30天"}
+    due_date = start_date + timedelta(days=days_by_priority.get(priority, 14))
+    return start_date.isoformat(), due_date.isoformat(), observation_by_priority.get(priority, "14天")
+
+
+def _product_line_todo_list(
+    product_line: str,
+    relationship_diagnostics: pd.DataFrame,
+    problem_skus: pd.DataFrame,
+    opportunity_skus: pd.DataFrame,
+    owner: str,
+    start_date: date,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+
+    def add_row(
+        priority: str,
+        business_order: str,
+        level: str,
+        target: str,
+        problem: str,
+        evidence: str,
+        cause_level: str,
+        impact: str,
+        action: str,
+        system_action: str = "",
+        system_priority: str = "",
+    ) -> None:
+        start, due, observation = _todo_schedule(priority, start_date)
+        rows.append(
+            {
+                "状态": "待开始",
+                "报告优先级": priority,
+                "经营顺序": business_order,
+                "层级": level,
+                "对象": target,
+                "问题": problem,
+                "证据": evidence,
+                "原因等级": cause_level,
+                "经营影响": impact,
+                "动作": action,
+                "负责人": owner or "待指定",
+                "开始时间": start,
+                "完成时间": due,
+                "观察周期": observation,
+                "成功标准": _todo_success_standard(problem, action),
+                "失败预案": _todo_failure_plan(problem, action),
+                "系统final_action": system_action,
+                "系统priority": system_priority,
+            }
+        )
+
+    actionable = relationship_diagnostics[relationship_diagnostics["行动状态"].isin(["需处理", "待验证", "机会"])]
+    for _, row in actionable.head(8).iterrows():
+        add_row(
+            str(row.get("报告优先级", "P2")),
+            str(row.get("经营顺序", "规模")),
+            "品线",
+            product_line,
+            f"{row.get('诊断关系', '')}：{row.get('诊断判断', '')}",
+            str(row.get("已确认事实", "")),
+            str(row.get("原因等级", "待验证假设")),
+            str(row.get("经营影响", "")),
+            str(row.get("建议动作", "")),
+        )
+
+    for _, row in problem_skus.head(10).iterrows():
+        problem_text = str(row.get("问题事实", ""))
+        business_order = "周转" if any(term in problem_text for term in ["库存", "断货"]) else "毛利润"
+        if "规模型主力" in str(row.get("问题判断", "")):
+            business_order = "规模"
+        add_row(
+            str(row.get("问题优先级", "P2")),
+            business_order,
+            "SKU",
+            str(row.get("SKU", "")),
+            problem_text,
+            f"{row.get('父体比较', '')} {row.get('品线比较', '')}",
+            str(row.get("原因等级", "待验证假设")),
+            str(row.get("经营影响", "")),
+            str(row.get("建议动作", "")),
+            str(row.get("系统final_action", "")),
+            str(row.get("系统priority", "")),
+        )
+
+    for _, row in opportunity_skus.head(5).iterrows():
+        role = str(row.get("经营角色", ""))
+        business_order = "规模" if role in {"引流 SKU", "主力 SKU"} else "毛利润"
+        add_row(
+            "P1" if row.get("置信度") != "低" else "P2",
+            business_order,
+            "SKU",
+            str(row.get("SKU", "")),
+            f"机会：{row.get('机会类型', '')}",
+            str(row.get("机会事实", "")),
+            "高概率原因" if row.get("置信度") != "低" else "待验证假设",
+            "若验证成立，可提高资源投入回报。",
+            str(row.get("建议动作", "")),
+            str(row.get("系统final_action", "")),
+            "",
+        )
+
+    result = pd.DataFrame(rows)
+    if result.empty:
+        return result
+    result = result.drop_duplicates(subset=["层级", "对象", "问题"], keep="first")
+    result["_priority_sort"] = result["报告优先级"].map(PROBLEM_PRIORITY_ORDER).fillna(9)
+    result["_business_sort"] = result["经营顺序"].map(BUSINESS_PRIORITY_ORDER).fillna(9)
+    return result.sort_values(["_priority_sort", "_business_sort", "对象"]).drop(columns=["_priority_sort", "_business_sort"])
+
+
 def _conclusions(
     product_line: str,
     line_df: pd.DataFrame,
@@ -735,7 +1288,10 @@ def build_product_line_diagnosis(
     df: pd.DataFrame,
     product_line: str,
     top_n: int = 20,
+    owner: str = "待指定",
+    start_date: date | None = None,
 ) -> dict[str, Any]:
+    todo_start_date = start_date or date.today()
     prepared = _prepare(df)
     line_df = _line_scope(prepared, product_line)
     if line_df.empty:
@@ -743,11 +1299,14 @@ def build_product_line_diagnosis(
         return {
             "product_line": product_line,
             "conclusions": [f"未找到品线：{product_line}。"],
+            "data_credibility": empty,
             "core_metrics": empty,
+            "relationship_diagnostics": empty,
             "role_structure": empty,
             "sku_contribution": empty,
             "problem_skus": empty,
             "opportunity_skus": empty,
+            "todo_list": empty,
             "action_items": empty,
         }
     line_df = _add_shares(line_df, prepared)
@@ -757,14 +1316,26 @@ def build_product_line_diagnosis(
     sku_contribution = _sku_contribution_table(sku_analysis)
     problem_skus = _problem_skus(sku_analysis, top_n)
     opportunity_skus = _opportunity_skus(sku_analysis)
-    action_items = _action_items(problem_skus, opportunity_skus)
+    data_credibility = _data_credibility(df, product_line)
+    relationship_diagnostics = _relationship_diagnostics(line_df, sku_analysis, data_credibility, opportunity_skus)
+    todo_list = _product_line_todo_list(
+        product_line,
+        relationship_diagnostics,
+        problem_skus,
+        opportunity_skus,
+        owner,
+        todo_start_date,
+    )
     return {
         "product_line": product_line,
         "conclusions": _conclusions(product_line, line_df, core_metrics, problem_skus, opportunity_skus),
+        "data_credibility": data_credibility,
         "core_metrics": core_metrics,
+        "relationship_diagnostics": relationship_diagnostics,
         "role_structure": role_structure,
         "sku_contribution": sku_contribution,
         "problem_skus": problem_skus,
         "opportunity_skus": opportunity_skus,
-        "action_items": action_items,
+        "todo_list": todo_list,
+        "action_items": todo_list,
     }

@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 import pandas as pd
 
@@ -101,3 +103,87 @@ def test_product_line_diagnosis_marks_low_confidence_when_peer_samples_are_missi
     if not report["problem_skus"].empty:
         assert "低" in report["problem_skus"]["置信度"].tolist()
 
+
+def test_product_line_diagnosis_outputs_data_credibility_and_cause_levels():
+    df = pd.DataFrame(
+        {
+            "sku": ["A", "B"],
+            "parent_asin": ["P1", "P1"],
+            "product_line": ["L1", "L1"],
+            "sku_role": ["主力 SKU", "低效异常 SKU"],
+            "sales_14d_amount": [500, 20],
+            "sales_14d_units": [50, 1],
+            "order_gross_profit": [80, -10],
+            "order_gross_margin": [0.16, -0.50],
+            "ad_spend": [30, 20],
+            "ad_sales": [200, 0],
+            "stock_days": [20, 200],
+            "available_qty": [20, 100],
+            "final_action": ["优先补货", "清货处理"],
+            "priority": ["P1", "P1"],
+        }
+    )
+
+    report = build_product_line_diagnosis(df, "L1")
+
+    assert {"数据可信度", "周转", "规模", "毛利润"}.issubset(set(report["relationship_diagnostics"]["经营顺序"]))
+    assert set(report["problem_skus"]["原因等级"]).issubset({"已确认原因", "高概率原因", "待验证假设", "无法判断"})
+    assert "销售与广告时间窗口" in report["data_credibility"]["检查项"].tolist()
+    assert "待确认" in report["data_credibility"]["状态"].tolist()
+
+
+def test_product_line_todo_contains_complete_action_fields_and_preserves_system_actions():
+    df = pd.DataFrame(
+        {
+            "sku": ["A", "B"],
+            "parent_asin": ["P1", "P1"],
+            "product_line": ["L1", "L1"],
+            "sku_role": ["主力 SKU", "低效异常 SKU"],
+            "sales_14d_amount": [500, 20],
+            "sales_14d_units": [50, 1],
+            "order_gross_profit": [80, -10],
+            "order_gross_margin": [0.16, -0.50],
+            "ad_spend": [30, 20],
+            "ad_sales": [200, 0],
+            "stock_days": [20, 200],
+            "available_qty": [20, 100],
+            "final_action": ["优先补货", "清货处理"],
+            "priority": ["P1", "P1"],
+        }
+    )
+
+    report = build_product_line_diagnosis(
+        df,
+        "L1",
+        owner="Fang",
+        start_date=date(2026, 6, 17),
+    )
+    todo = report["todo_list"]
+    required = {
+        "状态",
+        "报告优先级",
+        "经营顺序",
+        "层级",
+        "对象",
+        "问题",
+        "证据",
+        "原因等级",
+        "经营影响",
+        "动作",
+        "负责人",
+        "开始时间",
+        "完成时间",
+        "观察周期",
+        "成功标准",
+        "失败预案",
+        "系统final_action",
+        "系统priority",
+    }
+
+    assert required.issubset(todo.columns)
+    assert not todo.empty
+    assert set(todo["负责人"]) == {"Fang"}
+    assert set(todo["开始时间"]) == {"2026-06-17"}
+    assert {"优先补货", "清货处理"}.issubset(set(todo["系统final_action"]))
+    assert todo.iloc[0]["报告优先级"] == "P0"
+    assert todo.iloc[0]["经营顺序"] == "周转"

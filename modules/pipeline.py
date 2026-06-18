@@ -23,6 +23,7 @@ FULL_SKU_COLUMNS = [
     "spu",
     "product_line",
     "category_level_1",
+    "category_level_3",
     "product_name",
     "predicted_daily_sales",
     "stock_days",

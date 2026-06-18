@@ -1,6 +1,8 @@
 import pandas as pd
 
-from app import _apply_filters, _column_label, _display_columns, _filter_options_with_context
+from app import FILTER_COLUMNS, _apply_filters, _column_label, _display_columns, _filter_options_with_context
+from modules.loader import apply_column_mapping, load_yaml
+from modules.pipeline import prepare_full_sku_table
 
 
 def test_filter_options_are_linked_across_all_dimensions():
@@ -40,6 +42,34 @@ def test_filter_options_ignore_current_dimension_but_respect_other_filters():
     assert options["asin"] == ["A1"]
     assert options["parent_asin"] == ["P1", "P2"]
     assert options["product_line"] == ["LineA", "LineB"]
+
+
+def test_category_level_3_filter_is_linked_with_other_dimensions():
+    df = pd.DataFrame(
+        {
+            "parent_asin": ["P1", "P1", "P2"],
+            "product_line": ["LineA", "LineA", "LineB"],
+            "category_level_3": ["Cat1", "Cat2", "Cat1"],
+        }
+    )
+    columns = ["parent_asin", "product_line", "category_level_3"]
+
+    category_options = _filter_options_with_context(df, columns, {"product_line": ["LineA"]})
+    line_options = _filter_options_with_context(df, columns, {"category_level_3": ["Cat1"]})
+
+    assert "category_level_3" in FILTER_COLUMNS
+    assert category_options["category_level_3"] == ["Cat1", "Cat2"]
+    assert line_options["product_line"] == ["LineA", "LineB"]
+
+
+def test_category_level_3_is_mapped_and_kept_in_full_sku_output():
+    mapping_config = load_yaml("config/column_mapping.yaml")
+    mapped, mapping_report = apply_column_mapping(pd.DataFrame({"SKU": ["A"], "三级类目": ["家居收纳"]}), mapping_config)
+
+    full_sku = prepare_full_sku_table(mapped)
+
+    assert mapping_report["matched_columns"]["category_level_3"] == "三级类目"
+    assert full_sku.loc[0, "category_level_3"] == "家居收纳"
 
 
 def test_apply_filters_strips_source_values_before_matching():
@@ -104,4 +134,5 @@ def test_non_sku_tables_can_show_all_columns():
 def test_column_headers_have_chinese_labels():
     assert _column_label("role_daily_sales") == "角色判断日均销量"
     assert _column_label("order_gross_margin") == "订单毛利率"
+    assert _column_label("category_level_3") == "三级分类"
     assert _column_label("unknown_field") == "unknown_field"
