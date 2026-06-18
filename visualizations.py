@@ -83,7 +83,8 @@ PERCENT_HINTS = (
 def render_visualizations(section_name: str, result_tables: dict[str, pd.DataFrame]) -> None:
     """Render charts for the selected section without mutating result tables."""
     st.divider()
-    st.subheader("可视化分析")
+    st.subheader("结构与趋势")
+    st.caption("图表会随左侧筛选条件同步更新，用于发现关系与异常，不替代系统动作判断。")
 
     renderers = {
         "总览 Dashboard": _render_overview,

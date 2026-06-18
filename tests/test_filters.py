@@ -1,6 +1,15 @@
 import pandas as pd
 
-from app import FILTER_COLUMNS, _apply_filters, _column_label, _display_columns, _filter_label, _filter_options_with_context
+from app import (
+    FILTER_COLUMNS,
+    SECTION_INTROS,
+    TAB_LABELS,
+    _apply_filters,
+    _column_label,
+    _display_columns,
+    _filter_label,
+    _filter_options_with_context,
+)
 from modules.loader import apply_column_mapping, load_yaml
 from modules.pipeline import prepare_full_sku_table
 
@@ -83,6 +92,23 @@ def test_filter_labels_use_business_names_without_changing_field_keys():
     assert _filter_label("turnover_level") == "周转水平"
     assert _filter_label("cashflow_risk_level") == "现金流风险"
     assert _filter_label("asin") == "asin"
+
+
+def test_navigation_and_section_copy_use_business_language():
+    assert TAB_LABELS == [
+        "经营总览",
+        "引流 SKU",
+        "主力 SKU",
+        "利润 SKU",
+        "低效 SKU",
+        "父体",
+        "SPU / 品线",
+        "全部 SKU",
+        "数据质量",
+        "导出报告",
+    ]
+    assert set(TAB_LABELS) == set(SECTION_INTROS)
+    assert "先看利润、周转和库存风险" in SECTION_INTROS["经营总览"][1]
 
 
 def test_apply_filters_strips_source_values_before_matching():

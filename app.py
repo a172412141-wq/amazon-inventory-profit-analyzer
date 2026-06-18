@@ -17,7 +17,7 @@ from modules.product_line_diagnosis import build_product_line_diagnosis
 from modules.sku_roles import build_sku_role_reports
 from modules.spu_analysis import analyze_spu
 from modules.validation import get_missing_required_fields
-from visualizations import NAV_ITEMS, render_visualizations
+from visualizations import render_visualizations
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -80,6 +80,121 @@ FILTER_LABELS = {
     "turnover_level": "周转水平",
     "cashflow_risk_level": "现金流风险",
 }
+TAB_LABELS = [
+    "经营总览",
+    "引流 SKU",
+    "主力 SKU",
+    "利润 SKU",
+    "低效 SKU",
+    "父体",
+    "SPU / 品线",
+    "全部 SKU",
+    "数据质量",
+    "导出报告",
+]
+SECTION_INTROS = {
+    "经营总览": ("经营总览", "先看利润、周转和库存风险，再决定补货、清货与广告资源分配。"),
+    "引流 SKU": ("引流 SKU", "识别承担流量入口的 SKU，重点检查广告投入是否带来有效销售与父体协同。"),
+    "主力 SKU": ("主力 SKU", "保护销量与利润共同领先的核心 SKU，优先避免断货和资源分散。"),
+    "利润 SKU": ("利润 SKU", "寻找高利润贡献 SKU，在库存健康和广告可控的前提下评估扩量。"),
+    "低效 SKU": ("低效异常 SKU", "集中处理未形成明确角色价值的 SKU，减少库存、广告和管理资源浪费。"),
+    "父体": ("父体分析", "检查父体内部的销量、库存、利润和广告结构是否匹配。"),
+    "SPU / 品线": ("SPU / 品线分析", "从聚合表现进入经营关系诊断，形成带责任人与时间要求的行动清单。"),
+    "全部 SKU": ("SKU 完整判断", "查看每个 SKU 的完整指标、系统动作、处理优先级与判断依据。"),
+    "数据质量": ("数据质量", "先修复高优先级数据问题，避免错误字段和口径污染经营结论。"),
+    "导出报告": ("导出报告", "下载当前筛选范围的完整分析结果，或保存到本地报告目录。"),
+}
+APP_STYLES = """
+<style>
+    :root {
+        --brand-ink: #172033;
+        --brand-blue: #315EFB;
+        --brand-soft: #EEF3FF;
+        --surface: #FFFFFF;
+        --line: #E4E9F2;
+        --muted: #667085;
+    }
+    .stApp { background: #F7F9FC; }
+    .block-container { max-width: 1480px; padding-top: 2rem; padding-bottom: 4rem; }
+    [data-testid="stSidebar"] { border-right: 1px solid var(--line); background: #FBFCFE; }
+    [data-testid="stSidebar"] .block-container { padding-top: 1.5rem; }
+    [data-testid="stMetric"] {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px 18px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    }
+    [data-testid="stMetricLabel"] { color: var(--muted); }
+    [data-testid="stMetricValue"] { color: var(--brand-ink); }
+    [data-testid="stFileUploaderDropzone"] {
+        background: var(--surface);
+        border: 1.5px dashed #AFC0E8;
+        border-radius: 16px;
+        min-height: 112px;
+    }
+    [data-baseweb="tab-list"] { gap: 8px; }
+    [data-baseweb="tab"] {
+        border-radius: 10px 10px 0 0;
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+    .product-hero {
+        padding: 28px 30px;
+        margin-bottom: 20px;
+        border: 1px solid #DCE5FB;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #FFFFFF 0%, #F0F4FF 100%);
+        box-shadow: 0 8px 24px rgba(49, 94, 251, 0.08);
+    }
+    .product-eyebrow {
+        color: var(--brand-blue);
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+    .product-title {
+        color: var(--brand-ink);
+        font-size: clamp(30px, 4vw, 46px);
+        line-height: 1.15;
+        font-weight: 760;
+        margin: 0 0 10px 0;
+    }
+    .product-subtitle {
+        max-width: 820px;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.7;
+        margin: 0;
+    }
+    .product-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .product-tag {
+        color: #2949A3;
+        background: var(--brand-soft);
+        border: 1px solid #D9E4FF;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    .step-card {
+        min-height: 132px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px;
+    }
+    .step-number { color: var(--brand-blue); font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    .step-title { color: var(--brand-ink); font-size: 17px; font-weight: 700; margin: 8px 0 6px; }
+    .step-copy { color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .section-intro { margin: 8px 0 20px; }
+    .section-intro h2 { color: var(--brand-ink); margin-bottom: 4px; }
+    .section-intro p { color: var(--muted); margin: 0; }
+    .metric-group-title { color: #344054; font-size: 14px; font-weight: 700; margin: 20px 0 10px; }
+</style>
+"""
 COLUMN_LABELS = {
     "sku": "SKU",
     "asin": "ASIN",
@@ -184,6 +299,66 @@ def load_configs(mapping_mtime: float, thresholds_mtime: float) -> tuple[dict[st
         load_yaml(CONFIG_DIR / "column_mapping.yaml"),
         load_yaml(CONFIG_DIR / "thresholds.yaml"),
     )
+
+
+def _inject_app_styles() -> None:
+    st.markdown(APP_STYLES, unsafe_allow_html=True)
+
+
+def _render_app_header() -> None:
+    st.markdown(
+        """
+        <section class="product-hero">
+            <div class="product-eyebrow">AMAZON 经营决策工作台</div>
+            <h1 class="product-title">亚马逊库存与利润决策台</h1>
+            <p class="product-subtitle">把补货、库存、广告和利润数据放到同一套经营逻辑里，快速识别该补、该停、该清和该加资源的 SKU。</p>
+            <div class="product-tags">
+                <span class="product-tag">现金流优先</span>
+                <span class="product-tag">SKU 角色定位</span>
+                <span class="product-tag">父体与品线诊断</span>
+                <span class="product-tag">行动清单</span>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_empty_state() -> None:
+    st.markdown("#### 上传后，你会得到什么")
+    steps = [
+        ("01", "识别数据", "自动识别真实表头和中文字段，并提示缺失、重复或口径异常。"),
+        ("02", "形成判断", "按周转、利润和广告效率生成 SKU 主动作、角色定位和处理优先级。"),
+        ("03", "落到行动", "汇总父体、SPU 与品线问题，生成可筛选、可导出的经营报告。"),
+    ]
+    columns = st.columns(3)
+    for column, (number, title, copy) in zip(columns, steps):
+        column.markdown(
+            f'<div class="step-card"><div class="step-number">STEP {number}</div><div class="step-title">{title}</div><div class="step-copy">{copy}</div></div>',
+            unsafe_allow_html=True,
+        )
+    st.caption("数据在当前应用会话中处理。建议上传单行代表一个 SKU 的 .xlsx 文件。")
+    with st.expander("查看上传前检查清单"):
+        st.markdown(
+            """
+            - 至少包含 SKU、销量、库存天数、补货量、毛利润、毛利率、广告花费、广告销售额和 ACOS。
+            - `总供给` 与 `可用量` 至少提供一个；父 ASIN、SPU、品线和尺寸可增强横向诊断。
+            - 支持表头不在首行、中文字段名，以及 `30`、`30%`、`0.3` 三种百分比写法。
+            """
+        )
+
+
+def _render_section_intro(section: str) -> None:
+    title, description = SECTION_INTROS[section]
+    st.markdown(
+        f'<div class="section-intro"><h2>{title}</h2><p>{description}</p></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _clear_filter_state() -> None:
+    for column in FILTER_COLUMNS:
+        st.session_state.pop(_filter_key(column), None)
 
 
 def _format_metric(value: Any, percent: bool = False, money: bool = False) -> str:
@@ -450,7 +625,45 @@ def _build_filtered_tables(
 
 
 def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: str) -> None:
-    metric_specs = [
+    metric_groups = [
+        (
+            "核心经营结果",
+            [
+                ("14天销售额", False, True),
+                ("订单毛利润", False, True),
+                ("平均毛利率", True, False),
+                ("整体 ACOAS", True, False),
+            ],
+        ),
+        (
+            "库存与现金流",
+            [
+                ("可售库存天数", False, False),
+                ("在途库存天数", False, False),
+                ("90天+库存占比", True, False),
+                ("库龄超过90天合计数量", False, False),
+            ],
+        ),
+        (
+            "当前行动队列",
+            [
+                ("紧急补货 SKU 数", False, False),
+                ("清货/停补 SKU 数", False, False),
+                ("主力 SKU 数", False, False),
+                ("低效异常 SKU 数", False, False),
+            ],
+        ),
+    ]
+    for group_title, metric_specs in metric_groups:
+        st.markdown(f'<div class="metric-group-title">{group_title}</div>', unsafe_allow_html=True)
+        cols = st.columns(4)
+        for col, (label, is_percent, is_money) in zip(cols, metric_specs):
+            col.metric(label, _format_metric(metrics.get(label), is_percent, is_money))
+
+    st.markdown("#### 自动经营摘要")
+    st.info(summary)
+
+    detail_specs = [
         ("SKU 总数", False, False),
         ("父体数", False, False),
         ("SPU 数", False, False),
@@ -488,12 +701,12 @@ def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: 
         ("利润 SKU 数", False, False),
         ("低效异常 SKU 数", False, False),
     ]
-    for start in range(0, len(metric_specs), 4):
-        cols = st.columns(4)
-        for col, (label, is_percent, is_money) in zip(cols, metric_specs[start : start + 4]):
-            col.metric(label, _format_metric(metrics.get(label), is_percent, is_money))
-
-    st.markdown(summary.replace("\n", "\n\n"))
+    with st.expander("查看全部经营指标"):
+        details = [
+            {"指标": label, "数值": _format_metric(metrics.get(label), is_percent, is_money)}
+            for label, is_percent, is_money in detail_specs
+        ]
+        st.dataframe(pd.DataFrame(details), use_container_width=True, hide_index=True, height=460)
 
 
 def _render_table(
@@ -502,7 +715,10 @@ def _render_table(
     table_key: str = "table",
     enable_metric_selector: bool = False,
 ) -> None:
-    st.caption(f"{len(df):,} 行")
+    if df.empty:
+        st.info("当前筛选范围内暂无数据。可调整左侧筛选条件后重试。")
+        return
+    st.caption(f"当前显示 {len(df):,} 行")
     selected_extra_columns = _selected_extra_columns(df, table_key, enable_metric_selector)
     display, column_config = _prepare_dataframe_display(
         df,
@@ -612,19 +828,33 @@ def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Amazon Inventory Profit Analyzer", layout="wide")
-    st.title("amazon-inventory-profit-analyzer")
+    st.set_page_config(
+        page_title="亚马逊库存与利润决策台",
+        page_icon="📦",
+        layout="wide",
+        initial_sidebar_state="collapsed",
+    )
+    _inject_app_styles()
+    _render_app_header()
 
     mapping_path = CONFIG_DIR / "column_mapping.yaml"
     thresholds_path = CONFIG_DIR / "thresholds.yaml"
     mapping_config, thresholds = load_configs(mapping_path.stat().st_mtime, thresholds_path.stat().st_mtime)
-    uploaded_file = st.file_uploader("上传数据", type=["xlsx", "xls"])
+    st.markdown("### 上传经营数据")
+    st.caption("支持 Excel 文件；系统会自动识别表头、映射字段并检查数据质量。")
+    uploaded_file = st.file_uploader(
+        "选择补货、库存、广告与利润数据文件",
+        type=["xlsx", "xls"],
+        help="单个文件最大 200MB，建议每行对应一个 SKU。",
+    )
     if uploaded_file is None:
+        _render_empty_state()
         return
 
+    st.success(f"已载入：{uploaded_file.name}")
     sheet_summaries = get_sheet_summaries(uploaded_file, mapping_config)
     sheet_names = [item["sheet_name"] for item in sheet_summaries]
-    selected_sheet = sheet_names[0] if len(sheet_names) == 1 else st.selectbox("分析 Sheet", sheet_names)
+    selected_sheet = sheet_names[0] if len(sheet_names) == 1 else st.selectbox("选择需要分析的 Sheet", sheet_names)
 
     sheet_info = pd.DataFrame(
         [
@@ -637,20 +867,27 @@ def main() -> None:
             for item in sheet_summaries
         ]
     )
-    st.dataframe(sheet_info, use_container_width=True, hide_index=True)
+    with st.expander("查看文件识别结果", expanded=len(sheet_names) > 1):
+        st.dataframe(sheet_info, use_container_width=True, hide_index=True)
 
-    with st.spinner("正在分析 SKU..."):
+    with st.spinner("正在清洗数据并生成经营判断..."):
         raw_df, mapped_df, mapping_report = load_mapped_sheet(uploaded_file, selected_sheet, mapping_config)
         analysis = run_analysis(mapped_df, mapping_report, mapping_config, thresholds)
 
     missing_required = get_missing_required_fields(mapping_report, mapping_config)
     if missing_required:
-        st.warning("缺失必填字段：" + "、".join(missing_required))
+        st.warning("以下必填字段未识别，部分判断可能不完整：" + "、".join(missing_required))
 
     full = analysis["full"]
     with st.sidebar:
-        st.header("筛选")
+        st.header("筛选分析范围")
+        st.caption("筛选器彼此联动，并同步影响全部页面、图表和导出结果。")
+        st.button("清空所有筛选", use_container_width=True, on_click=_clear_filter_state)
         filters = _render_linked_filters(full, FILTER_COLUMNS)
+        if filters:
+            st.success(f"已启用 {len(filters)} 个筛选条件")
+        else:
+            st.caption("当前查看全部数据")
 
     filtered_full = _apply_filters(full, filters)
     report_tables, overview_metrics, overview_summary = _build_filtered_tables(
@@ -659,48 +896,66 @@ def main() -> None:
         thresholds,
     )
 
-    tabs = st.tabs(NAV_ITEMS)
+    st.caption(f"分析范围：{len(filtered_full):,} / {len(full):,} 个 SKU")
+    tabs = st.tabs(TAB_LABELS)
 
     with tabs[0]:
+        _render_section_intro("经营总览")
         _render_dashboard(report_tables["full_sku"], overview_metrics, overview_summary)
         render_visualizations("总览 Dashboard", report_tables)
     with tabs[1]:
+        _render_section_intro("引流 SKU")
         _render_table(report_tables["traffic_skus"], table_key="traffic_skus", enable_metric_selector=True)
         render_visualizations("引流 SKU", report_tables)
     with tabs[2]:
+        _render_section_intro("主力 SKU")
         _render_table(report_tables["main_skus"], table_key="main_skus", enable_metric_selector=True)
         render_visualizations("主力 SKU", report_tables)
     with tabs[3]:
+        _render_section_intro("利润 SKU")
         _render_table(report_tables["profit_skus"], table_key="profit_skus", enable_metric_selector=True)
         render_visualizations("利润 SKU", report_tables)
     with tabs[4]:
+        _render_section_intro("低效 SKU")
         _render_table(report_tables["low_efficiency_skus"], table_key="low_efficiency_skus", enable_metric_selector=True)
         render_visualizations("低效异常 SKU", report_tables)
     with tabs[5]:
+        _render_section_intro("父体")
+        st.markdown("#### 父体经营表现")
         _render_table(report_tables["parent_analysis"], height=420, table_key="parent_analysis")
+        st.markdown("#### 结构异常明细")
         _render_table(report_tables["parent_structure_anomalies"], height=360, table_key="parent_structure_anomalies")
         render_visualizations("父体分析", report_tables)
     with tabs[6]:
+        _render_section_intro("SPU / 品线")
+        st.markdown("#### SPU 汇总")
         _render_table(report_tables["spu_analysis"], height=420, table_key="spu_analysis")
+        st.markdown("#### 品线汇总")
         _render_table(report_tables["product_line_analysis"], height=420, table_key="product_line_analysis")
         _render_product_line_diagnosis(filtered_full)
         render_visualizations("SPU / 品线分析", report_tables)
     with tabs[7]:
+        _render_section_intro("全部 SKU")
         _render_table(report_tables["full_sku"], table_key="full_sku", enable_metric_selector=True)
         render_visualizations("SKU 完整判断", report_tables)
     with tabs[8]:
+        _render_section_intro("数据质量")
         _render_table(report_tables["data_errors"], table_key="data_errors")
         render_visualizations("数据异常", report_tables)
     with tabs[9]:
+        _render_section_intro("导出报告")
         export_bytes = export_analysis_report(report_tables)
         filename = f"amazon_inventory_profit_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         st.download_button(
-            "导出分析 Excel",
+            "下载当前分析报告",
             data=export_bytes,
             file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
         )
-        if st.button("保存到 output/reports"):
+        st.caption("报告包含总览、四类 SKU、父体、SPU、品线和数据异常等 11 个 Sheet。")
+        if st.button("同时保存到本地 output/reports", use_container_width=True):
             output_path = OUTPUT_DIR / filename
             export_analysis_report(report_tables, output_path)
             st.success(f"已保存：{output_path}")
