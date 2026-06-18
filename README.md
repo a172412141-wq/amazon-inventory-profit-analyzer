@@ -107,6 +107,8 @@ streamlit run app.py
 
 如需兼容新字段名，只需要在对应标准字段的 `aliases` 中增加名称。
 
+侧边栏筛选器使用业务名称展示，其中 `category_level_3` 显示为“尺寸”；底层字段名仍保持不变。
+
 ## 输出 Sheet 说明
 
 导出的 Excel 包含：

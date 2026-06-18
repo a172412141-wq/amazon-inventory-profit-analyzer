@@ -12,7 +12,7 @@
 | `spu` | SPU | 可选；用于 SPU 聚合 |
 | `product_line` | 品线 | 可选；Fang 品线诊断依赖此字段 |
 | `category_level_1` | 一级分类 | 可选；也参与品线维度聚合 |
-| `category_level_3` | 三级分类 | 可选；用于侧边栏联动筛选和 SKU 明细输出 |
+| `category_level_3` | 三级分类 | 可选；用于侧边栏联动筛选和 SKU 明细输出，筛选器显示名称为“尺寸” |
 | `size` | 尺寸/规格 | 可选；缺失时同规格比较降为低置信度 |
 | `product_name` | 产品名称 | 可选 |
 

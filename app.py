@@ -69,6 +69,17 @@ FILTER_COLUMNS = [
     "turnover_level",
     "cashflow_risk_level",
 ]
+FILTER_LABELS = {
+    "parent_asin": "父ASIN",
+    "product_line": "品线",
+    "category_level_3": "尺寸",
+    "sku_role": "SKU角色定位",
+    "priority": "处理优先级",
+    "inventory_status": "库存天数情况",
+    "margin_level": "毛利率水平",
+    "turnover_level": "周转水平",
+    "cashflow_risk_level": "现金流风险",
+}
 COLUMN_LABELS = {
     "sku": "SKU",
     "asin": "ASIN",
@@ -330,6 +341,10 @@ def _filter_key(column: str) -> str:
     return f"filter_{column}"
 
 
+def _filter_label(column: str) -> str:
+    return FILTER_LABELS.get(column, column)
+
+
 def _filter_options_with_context(
     df: pd.DataFrame,
     filter_columns: list[str],
@@ -392,7 +407,7 @@ def _render_linked_filters(df: pd.DataFrame, filter_columns: list[str]) -> dict[
         options = options_by_column.get(column, [])
         if not options:
             continue
-        selected = st.multiselect(column, options, key=_filter_key(column))
+        selected = st.multiselect(_filter_label(column), options, key=_filter_key(column))
         selected_values = _normalize_filter_values(selected)
         if selected_values:
             rendered_filters[column] = selected_values

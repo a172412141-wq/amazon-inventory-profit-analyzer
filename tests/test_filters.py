@@ -1,6 +1,6 @@
 import pandas as pd
 
-from app import FILTER_COLUMNS, _apply_filters, _column_label, _display_columns, _filter_options_with_context
+from app import FILTER_COLUMNS, _apply_filters, _column_label, _display_columns, _filter_label, _filter_options_with_context
 from modules.loader import apply_column_mapping, load_yaml
 from modules.pipeline import prepare_full_sku_table
 
@@ -70,6 +70,19 @@ def test_category_level_3_is_mapped_and_kept_in_full_sku_output():
 
     assert mapping_report["matched_columns"]["category_level_3"] == "三级类目"
     assert full_sku.loc[0, "category_level_3"] == "家居收纳"
+
+
+def test_filter_labels_use_business_names_without_changing_field_keys():
+    assert _filter_label("parent_asin") == "父ASIN"
+    assert _filter_label("product_line") == "品线"
+    assert _filter_label("category_level_3") == "尺寸"
+    assert _filter_label("sku_role") == "SKU角色定位"
+    assert _filter_label("priority") == "处理优先级"
+    assert _filter_label("inventory_status") == "库存天数情况"
+    assert _filter_label("margin_level") == "毛利率水平"
+    assert _filter_label("turnover_level") == "周转水平"
+    assert _filter_label("cashflow_risk_level") == "现金流风险"
+    assert _filter_label("asin") == "asin"
 
 
 def test_apply_filters_strips_source_values_before_matching():
