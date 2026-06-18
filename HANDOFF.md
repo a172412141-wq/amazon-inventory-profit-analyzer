@@ -4,15 +4,26 @@
 
 ## 当前目标
 
-继续完善 Amazon 库存利润分析器。本轮发布 Streamlit 产品信息层级、首页内容、经营总览、栏目说明、筛选反馈和导出文案优化；底层指标与业务判断保持不变。
+继续完善 Amazon 库存利润分析器。本次修复 Fang 品线诊断的数据可信度计算，避免把清洗阶段补为 0 的原始缺失值误判为已提供数据；底层指标、SKU 角色、系统动作和优先级保持不变。
 
 ## 仓库状态
 
 - 项目仓库：当前目录 `amazon-inventory-profit-analyzer/`。
-- 发布分支：`main`；发布前基线为 `3475942 Add product line diagnosis report`。
+- 发布分支：`main`；本次修改前基线为 `86183f8 Redesign Streamlit decision workspace`，当时与 `origin/main` 同步。
 - 外层 `New project/` 还有一个独立旧仓库；它不是本项目提交和状态判断的依据。
 
-当前业务代码工作区变更：
+当前跟踪文件工作区变更：
+
+- `modules/product_line_diagnosis.py`：完整率同时检查字段值与 `_missing_<field>`；派生可售库存天数仅在销量和库存来源字段真实存在时计入完整率。
+- `tests/test_product_line_diagnosis.py`：增加“缺失后补 0”与“真实 0”并存时的完整率回归测试。
+- `HANDOFF.md`：记录本次修复、验证结果和下一步。
+
+当前未跟踪内容（本次未修改、未接入现有应用）：
+
+- `config/fang_diagnosis.yaml`
+- `fang_diagnosis/`
+
+当前 HEAD 已包含的近期发布内容：
 
 - `README.md`：补充 Fang 诊断与 ToDo 说明。
 - `app.py`：增加可信度、经营关系诊断和 ToDo 编辑界面。
@@ -36,7 +47,8 @@
 ## 已验证
 
 - `.venv/bin/python -c "import app"`：通过。
-- `.venv/bin/python -m pytest -q`：原生运行 45 个测试，全部通过；包含三级分类字段映射、联动筛选、业务显示名称和新导航文案回归测试。
+- `.venv/bin/python -m pytest -q -p no:cacheprovider`：原生运行 46 个测试，全部通过。
+- `tests/test_product_line_diagnosis.py`：7 个定向测试全部通过；新增用例确认缺失后补 0 不计入完整率、原始真实 0 仍计为已提供。
 - Excel 11 Sheet 内存导出冒烟：通过。
 - Streamlit 本地启动成功，`/_stcore/health` 返回 `ok`。
 - 浏览器复核新版上传首页：标题、价值说明、上传区、三步流程与检查清单均正常显示，控制台无错误。
@@ -44,9 +56,9 @@
 
 ## 剩余风险
 
-1. 品线数据可信度目前直接检查清洗后的列；某些原始缺失字段会在清洗时补为 0，可能被误判为完整。
-2. `st.data_editor` 的返回值尚未接收；ToDo 可在页面编辑，但没有明确的持久化或 Excel 导出闭环。
-3. 尚无可提交的输入样例文件用于端到端上传验证；`output/reports/` 中只有被忽略的历史冒烟输出。
+1. `st.data_editor` 的返回值尚未接收；ToDo 可在页面编辑，但没有明确的持久化或 Excel 导出闭环。
+2. 尚无可提交的输入样例文件用于端到端上传验证；`output/reports/` 中只有被忽略的历史冒烟输出。
+3. 未跟踪的 `fang_diagnosis/` 与当前已上线的 `modules/product_line_diagnosis.py` 是两套潜在重复实现；在确认其用途前不得删除、提交或接入。
 
 ## 本轮筛选器命名发布
 
@@ -66,11 +78,11 @@
 
 - 动作模块恢复且规则不变：通过。
 - 应用导入与服务健康检查：通过。
-- 全量 45 个测试：通过。
+- 全量 46 个测试：通过。
 - Fang 诊断不改写 `sku_role`、`final_action`、`priority`：测试覆盖并通过。
 - 三级分类映射、完整 SKU 输出和跨维度联动：测试覆盖并通过。
 - Excel 导出与 `git diff --check`：通过。
 
 ## 后续候选任务
 
-修正数据可信度对原始缺失字段的识别，并决定 ToDo 是仅会话编辑，还是需要纳入导出或持久化。对应阶段见 `PLANS.md`。
+先确认 ToDo 是仅会话编辑，还是需要纳入 Excel 导出或其他持久化，再实现对应闭环；同时确认未跟踪 `fang_diagnosis/` 原型与当前品线诊断的关系。对应阶段见 `PLANS.md`。

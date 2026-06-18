@@ -743,14 +743,35 @@ def _action_items(problem_skus: pd.DataFrame, opportunity_skus: pd.DataFrame) ->
     return pd.DataFrame(rows)
 
 
-def _field_completeness(df: pd.DataFrame, column: str) -> float:
-    if column not in df.columns or df.empty:
-        return 0.0
+def _field_presence(df: pd.DataFrame, column: str) -> pd.Series:
+    if column not in df.columns:
+        return pd.Series(False, index=df.index, dtype=bool)
     values = df[column]
     if pd.api.types.is_numeric_dtype(values):
-        return float(pd.to_numeric(values, errors="coerce").notna().mean())
-    text_values = values.astype("string").fillna("").str.strip()
-    return float((~text_values.isin(["", "nan", "none", "<NA>"])).mean())
+        present = pd.to_numeric(values, errors="coerce").notna()
+    else:
+        text_values = values.astype("string").fillna("").str.strip()
+        present = ~text_values.isin(["", "nan", "none", "<NA>"])
+
+    missing_flag = f"_missing_{column}"
+    if missing_flag in df.columns:
+        present &= ~df[missing_flag].fillna(True).astype(bool)
+    return present
+
+
+def _field_completeness(df: pd.DataFrame, column: str) -> float:
+    if df.empty:
+        return 0.0
+    return float(_field_presence(df, column).mean())
+
+
+def _available_stock_days_completeness(df: pd.DataFrame) -> float:
+    if df.empty:
+        return 0.0
+    available_source = _field_presence(df, "available_qty")
+    fallback_source = _field_presence(df, "total_supply_qty") & _field_presence(df, "inbound_qty")
+    sales_source = _field_presence(df, "sales_7d_units")
+    return float(((available_source | fallback_source) & sales_source).mean())
 
 
 def _data_credibility(df: pd.DataFrame, product_line: str) -> pd.DataFrame:
@@ -780,7 +801,7 @@ def _data_credibility(df: pd.DataFrame, product_line: str) -> pd.DataFrame:
     sku_ratio = _field_completeness(source, "sku")
     parent_ratio = _field_completeness(source, "parent_asin")
     profit_ratio = min(_field_completeness(source, "order_gross_profit"), _field_completeness(source, "order_gross_margin"))
-    inventory_ratio = max(_field_completeness(source, "available_stock_days"), _field_completeness(source, "stock_days"))
+    inventory_ratio = max(_available_stock_days_completeness(source), _field_completeness(source, "stock_days"))
     size_ratio = _field_completeness(source, "size")
     sales_ratio = max(_field_completeness(source, "sales_14d_amount"), _field_completeness(source, "sales_7d_amount"))
     ad_ratio = min(_field_completeness(source, "ad_spend"), _field_completeness(source, "ad_sales"))
