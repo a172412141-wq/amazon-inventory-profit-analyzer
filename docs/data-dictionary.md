@@ -56,7 +56,7 @@
 | 字段 | 含义/回退规则 |
 |---|---|
 | `sales_7d_amount` | 7 天销售额 |
-| `sales_14d_amount` | 14 天销售额；总销售额优先口径 |
+| `sales_14d_amount` | 14 天销售额；页面切到 14 天时作为当前周期总销售额 |
 | `ad_impressions` | 广告曝光 |
 | `ad_clicks` | 广告点击 |
 | `ad_orders` | 广告订单 |
@@ -67,7 +67,7 @@
 | `ctr` | CTR；缺失时可计算 |
 | `cvr` | 总转化率；缺失时可计算 |
 | `ad_cvr` | 广告转化率；缺失时可计算 |
-| `acoas` | 原表 ACOAS 可映射，但当前派生结果按广告花费/总销售额重新计算 |
+| `acoas` | 原表 ACOAS 可映射，但页面和报告会按广告花费/当前周期总销售额重新计算 |
 
 ## 主要派生字段
 
@@ -83,7 +83,10 @@
 | `over_90_stock_qty` | 超过理想周转需求的可售库存量 |
 | `over_90_inventory_ratio` | 90 天以上库存量 / 可售库存量 |
 | `ad_order_share` | 广告订单 / 总订单 |
-| `acoas` | 广告花费 / 总销售额 |
+| `selected_sales_units` | 当前页面周期销量；7 天或 14 天快速周期切换决定 |
+| `selected_sales_amount` | 当前页面周期销售额；用于当前口径 ACOAS 分母 |
+| `selected_daily_sales_units` | 当前页面周期销量 / 周期天数 |
+| `acoas` | 广告花费 / 当前周期总销售额；筛选后按可见范围重新汇总 |
 | `margin_level` | 毛利率分层 |
 | `turnover_level` | 周转分层 |
 | `inventory_status` | 库存风险状态 |

@@ -9,6 +9,13 @@ from .classification import classify_skus
 from .cleaning import clean_data
 from .metrics import calculate_metrics
 from .parent_analysis import analyze_parent
+from .periods import (
+    normalize_sales_period,
+    sales_period_amount_column,
+    sales_period_days,
+    sales_period_label,
+    sales_period_units_column,
+)
 from .product_line_analysis import analyze_product_lines
 from .recommendations import apply_recommendations
 from .sku_roles import build_sku_role_reports, classify_sku_roles
@@ -145,6 +152,31 @@ def _format_ratio(value: float) -> str:
     return "-" if pd.isna(value) else f"{value:.2%}"
 
 
+def _selected_period_metrics(full_sku: pd.DataFrame, sales_period: str | None) -> dict[str, Any]:
+    if sales_period is None:
+        sales_14d_amount = _sum(full_sku, "sales_14d_amount")
+        sales_7d_amount = _sum(full_sku, "sales_7d_amount")
+        sales_amount = sales_14d_amount if sales_14d_amount > 0 else sales_7d_amount
+        sales_units = _sum(full_sku, "sales_14d_units")
+        return {
+            "period": "14d",
+            "label": "14天",
+            "days": 14,
+            "sales_amount": sales_amount,
+            "sales_units": sales_units,
+        }
+
+    period = normalize_sales_period(sales_period)
+    days = sales_period_days(period)
+    return {
+        "period": period,
+        "label": sales_period_label(period),
+        "days": days,
+        "sales_amount": _sum(full_sku, sales_period_amount_column(period)),
+        "sales_units": _sum(full_sku, sales_period_units_column(period)),
+    }
+
+
 def _threshold(thresholds: dict[str, Any] | None, path: tuple[str, ...], default: float) -> float:
     current: Any = thresholds or {}
     for key in path:
@@ -166,6 +198,7 @@ def build_overview(
     full_sku: pd.DataFrame,
     role_reports: dict[str, pd.DataFrame],
     thresholds: dict[str, Any] | None = None,
+    sales_period: str | None = None,
 ) -> tuple[dict[str, Any], str, pd.DataFrame]:
     sku_count = _nunique(full_sku, "sku") or len(full_sku)
     ad_spend = _sum(full_sku, "ad_spend")
@@ -182,10 +215,15 @@ def build_overview(
     sales_7d_units = _sum(full_sku, "sales_7d_units")
     sales_14d_amount = _sum(full_sku, "sales_14d_amount")
     sales_7d_amount = _sum(full_sku, "sales_7d_amount")
-    total_sales_amount = sales_14d_amount if sales_14d_amount > 0 else sales_7d_amount
-    overall_acoas = _safe_divide(ad_spend, total_sales_amount)
+    selected_period = _selected_period_metrics(full_sku, sales_period)
+    selected_sales_amount = float(selected_period["sales_amount"])
+    selected_sales_units = float(selected_period["sales_units"])
+    period_days = int(selected_period["days"])
+    period_label = str(selected_period["label"])
+    overall_acoas = _safe_divide(ad_spend, selected_sales_amount)
     gross_profit = _sum(full_sku, "order_gross_profit")
-    avg_margin = gross_profit / sales_7d_amount if sales_7d_amount > 0 and gross_profit != 0 else pd.to_numeric(
+    margin_sales_amount = selected_sales_amount if sales_period is not None else sales_7d_amount
+    avg_margin = gross_profit / margin_sales_amount if margin_sales_amount > 0 and gross_profit != 0 else pd.to_numeric(
         full_sku.get("order_gross_margin", pd.Series(dtype=float)),
         errors="coerce",
     ).mean()
@@ -234,10 +272,15 @@ def build_overview(
         "父体数": _nunique(full_sku, "parent_asin"),
         "SPU 数": _nunique(full_sku, "spu"),
         "品线数": _nunique(full_sku, "product_line"),
+        "当前周期": period_label,
+        "当前周期销售额": selected_sales_amount,
+        "当前周期销量": selected_sales_units,
+        "当前周期日均销量": selected_sales_units / period_days if period_days > 0 else np.nan,
+        "当前周期日均销售额": selected_sales_amount / period_days if period_days > 0 else np.nan,
         "14天销售额": _sum(full_sku, "sales_14d_amount"),
         "14天销量": sales_14d_units,
-        "目前日均销量": _sum(full_sku, "current_daily_sales_units"),
-        "目前日均销售额": _sum(full_sku, "current_daily_sales_amount"),
+        "目前日均销量": selected_sales_units / period_days if period_days > 0 else np.nan,
+        "目前日均销售额": selected_sales_amount / period_days if period_days > 0 else np.nan,
         "理想周转情况下日销量": ideal_turnover_daily_units,
         "总广告花费": ad_spend,
         "广告销售额": ad_sales,
@@ -272,7 +315,7 @@ def build_overview(
 
     summary = (
         f"本次共分析 {sku_count} 个 SKU，涉及 {metrics['父体数']} 个父体、{metrics['SPU 数']} 个 SPU、"
-        f"{metrics['品线数']} 条品线。\n"
+        f"{metrics['品线数']} 条品线；当前按 {period_label} 口径展示销售、销量和 ACOAS。\n"
         f"当前主要问题：\n"
         f"1. 引流 SKU 有 {traffic_count} 个，广告花费占父体总花费超过 35%，需持续监控广告效率。\n"
         f"2. 主力 SKU 有 {main_count} 个，14天销量和毛利率均高于父体平均值。\n"

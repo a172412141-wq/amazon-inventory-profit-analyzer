@@ -132,6 +132,40 @@ def test_product_line_diagnosis_outputs_data_credibility_and_cause_levels():
     assert "待确认" in report["data_credibility"]["状态"].tolist()
 
 
+def test_data_credibility_excludes_zero_filled_missing_values_but_keeps_real_zeroes():
+    df = pd.DataFrame(
+        {
+            "sku": ["A", "B"],
+            "product_line": ["L1", "L1"],
+            "sku_role": ["低效异常 SKU", "低效异常 SKU"],
+            "sales_14d_amount": [0.0, 0.0],
+            "sales_7d_amount": [0.0, 0.0],
+            "ad_spend": [0.0, 0.0],
+            "ad_sales": [0.0, 0.0],
+            "stock_days": [0.0, 0.0],
+            "available_stock_days": [0.0, 0.0],
+            "available_qty": [0.0, 0.0],
+            "total_supply_qty": [0.0, 0.0],
+            "inbound_qty": [0.0, 0.0],
+            "sales_7d_units": [0.0, 0.0],
+            "_missing_sales_14d_amount": [True, False],
+            "_missing_sales_7d_amount": [True, False],
+            "_missing_ad_spend": [True, False],
+            "_missing_ad_sales": [True, False],
+            "_missing_stock_days": [True, False],
+            "_missing_available_qty": [True, False],
+            "_missing_total_supply_qty": [True, False],
+            "_missing_inbound_qty": [True, False],
+            "_missing_sales_7d_units": [True, False],
+        }
+    )
+
+    credibility = build_product_line_diagnosis(df, "L1")["data_credibility"].set_index("检查项")
+
+    assert credibility.loc["销售与广告时间窗口", "完整率"] == pytest.approx(0.5)
+    assert credibility.loc["库存口径", "完整率"] == pytest.approx(0.5)
+
+
 def test_product_line_todo_contains_complete_action_fields_and_preserves_system_actions():
     df = pd.DataFrame(
         {
@@ -187,3 +221,132 @@ def test_product_line_todo_contains_complete_action_fields_and_preserves_system_
     assert {"优先补货", "清货处理"}.issubset(set(todo["系统final_action"]))
     assert todo.iloc[0]["报告优先级"] == "P0"
     assert todo.iloc[0]["经营顺序"] == "周转"
+
+
+def test_product_line_diagnosis_provides_management_and_todo_narratives():
+    df = pd.DataFrame(
+        {
+            "sku": ["A", "B"],
+            "parent_asin": ["P1", "P1"],
+            "product_line": ["L1", "L1"],
+            "sku_role": ["主力 SKU", "低效异常 SKU"],
+            "sales_14d_amount": [500, 20],
+            "sales_14d_units": [50, 1],
+            "order_gross_profit": [80, -10],
+            "order_gross_margin": [0.16, -0.50],
+            "ad_spend": [30, 20],
+            "ad_sales": [200, 0],
+            "stock_days": [20, 200],
+            "available_qty": [20, 100],
+            "final_action": ["优先补货", "清货处理"],
+            "priority": ["P1", "P1"],
+        }
+    )
+
+    report = build_product_line_diagnosis(
+        df,
+        "L1",
+        owner="Fang",
+        start_date=date(2026, 6, 17),
+    )
+    management = report["executive_summary"]
+    todo_summary = report["todo_summary"]
+
+    assert set(management) == {"headline", "operating_snapshot", "priority_risks", "growth_opportunities", "data_boundaries"}
+    assert "L1" in management["headline"]
+    assert "P0/P1" in management["headline"]
+    assert "数据" in management["data_boundaries"]
+    assert "共形成" in todo_summary["headline"]
+    assert "P0" in todo_summary["priority_summary"]
+    assert "Fang" in todo_summary["ownership_summary"]
+    assert "2026-06-19" in todo_summary["schedule_summary"]
+    assert "首要执行项" in todo_summary["execution_focus"]
+
+
+@pytest.mark.parametrize(
+    ("ad_spend", "ad_clicks"),
+    [
+        (19, 100),
+        (100, 19),
+        (100, None),
+    ],
+)
+def test_fang_rel_008_downgrades_ad_diagnosis_when_sample_is_insufficient(ad_spend, ad_clicks):
+    data = {
+        "sku": ["A"],
+        "parent_asin": ["P1"],
+        "product_line": ["L1"],
+        "sku_role": ["低效异常 SKU"],
+        "sales_14d_amount": [100],
+        "sales_14d_units": [10],
+        "order_gross_profit": [10],
+        "order_gross_margin": [0.10],
+        "ad_spend": [ad_spend],
+        "ad_sales": [20],
+        "stock_days": [45],
+        "available_qty": [20],
+        "final_action": ["控广告"],
+        "priority": ["P2"],
+    }
+    if ad_clicks is not None:
+        data["ad_clicks"] = [ad_clicks]
+    df = pd.DataFrame(data)
+    original = df.copy(deep=True)
+
+    report = build_product_line_diagnosis(
+        df,
+        "L1",
+        thresholds={
+            "ads": {
+                "minimum_spend_for_reliable_acos": 20,
+                "minimum_clicks_for_reliable_cvr": 20,
+            }
+        },
+    )
+    ad_diagnosis = report["relationship_diagnostics"].query("诊断关系 == '广告-销售-利润'").iloc[0]
+
+    assert ad_diagnosis["原因等级"] == "待验证假设"
+    assert ad_diagnosis["报告优先级"] == "P3"
+    assert ad_diagnosis["行动状态"] == "待验证"
+    assert "样本不足" in ad_diagnosis["诊断判断"]
+    assert "20" in ad_diagnosis["已确认事实"]
+    assert report["sku_contribution"].iloc[0]["系统final_action"] == "控广告"
+    pd.testing.assert_frame_equal(df, original)
+
+
+def test_fang_rel_008_keeps_ad_diagnosis_when_sample_reaches_boundary():
+    df = pd.DataFrame(
+        {
+            "sku": ["A"],
+            "parent_asin": ["P1"],
+            "product_line": ["L1"],
+            "sku_role": ["低效异常 SKU"],
+            "sales_14d_amount": [100],
+            "sales_14d_units": [10],
+            "order_gross_profit": [10],
+            "order_gross_margin": [0.10],
+            "ad_spend": [20],
+            "ad_sales": [20],
+            "ad_clicks": [20],
+            "stock_days": [45],
+            "available_qty": [20],
+            "final_action": ["控广告"],
+            "priority": ["P2"],
+        }
+    )
+
+    report = build_product_line_diagnosis(
+        df,
+        "L1",
+        thresholds={
+            "ads": {
+                "minimum_spend_for_reliable_acos": 20,
+                "minimum_clicks_for_reliable_cvr": 20,
+            }
+        },
+    )
+    ad_diagnosis = report["relationship_diagnostics"].query("诊断关系 == '广告-销售-利润'").iloc[0]
+
+    assert ad_diagnosis["原因等级"] == "高概率原因"
+    assert ad_diagnosis["报告优先级"] == "P1"
+    assert ad_diagnosis["行动状态"] == "需处理"

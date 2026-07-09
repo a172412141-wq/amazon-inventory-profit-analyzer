@@ -15,7 +15,7 @@ def _threshold(thresholds: dict | None, path: tuple[str, ...], default: float) -
 
 
 def _status_and_recommendation(row: pd.Series, high_sales_threshold: float, thresholds: dict | None = None) -> tuple[str, str]:
-    sales = row.get("sales_14d_amount", 0)
+    sales = row.get("selected_sales_amount", row.get("sales_14d_amount", 0))
     stock_days = row.get("weighted_stock_days")
     margin = row.get("order_gross_margin")
     gross_profit = row.get("order_gross_profit")
@@ -49,11 +49,12 @@ def _status_and_recommendation(row: pd.Series, high_sales_threshold: float, thre
     return "观察品线", "稳定运营"
 
 
-def analyze_spu(df: pd.DataFrame, thresholds: dict | None = None) -> pd.DataFrame:
-    summary = aggregate_dimension(df, "spu")
+def analyze_spu(df: pd.DataFrame, thresholds: dict | None = None, sales_period: str | None = None) -> pd.DataFrame:
+    summary = aggregate_dimension(df, "spu", sales_period=sales_period)
     if summary.empty:
         return summary
-    high_sales_threshold = summary["sales_14d_amount"].quantile(0.8) if "sales_14d_amount" in summary.columns else 0
+    sales_metric = "selected_sales_amount" if "selected_sales_amount" in summary.columns else "sales_14d_amount"
+    high_sales_threshold = summary[sales_metric].quantile(0.8) if sales_metric in summary.columns else 0
     pairs = summary.apply(lambda row: _status_and_recommendation(row, high_sales_threshold, thresholds), axis=1)
     summary["spu_status"] = [pair[0] for pair in pairs]
     summary["operation_recommendation"] = [pair[1] for pair in pairs]
@@ -64,6 +65,9 @@ def analyze_spu(df: pd.DataFrame, thresholds: dict | None = None) -> pd.DataFram
         "sku_count",
         "parent_count",
         "product_line",
+        "selected_sales_units",
+        "selected_sales_amount",
+        "selected_daily_sales_units",
         "sales_7d_units",
         "sales_14d_units",
         "sales_7d_amount",

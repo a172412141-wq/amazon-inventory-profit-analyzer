@@ -57,7 +57,8 @@
 ## 广告和转化指标
 
 - `ACOS = ad_spend / ad_sales`。
-- `ACOAS = ad_spend / total_sales_amount`，总销售额优先 14 天，回退 7 天。
+- 页面默认按 7 天口径展示销售、销量和 ACOAS，可用快速周期按钮切换到 14 天。
+- `ACOAS = ad_spend / 当前周期 total_sales_amount`；总览、父体、SPU、品线和品线诊断都在筛选后的数据范围内重新汇总，且销售额分母必须与当前周期一致。
 - `CPC = ad_spend / ad_clicks`。
 - `CTR = ad_clicks / ad_impressions`。
 - `ad_cvr = ad_orders / ad_clicks`。
@@ -77,4 +78,6 @@
 - 输出数据可信度、核心指标、关系诊断、角色结构、问题 SKU、机会 SKU 和 ToDo。
 - 原因等级只能表达当前证据强度，不应把相关关系描述为确定因果。
 - 缺少时间窗口、历史趋势、利润成本口径或同类样本时，必须展示缺失信息和验证动作。
+- 广告花费或点击未达到暂定可靠门槛时，Fang 报告不得把高 ACOAS 定义为品线核心矛盾；默认门槛为花费 `20`、点击 `20`，配置位于 `thresholds.yaml`，当前状态为 provisional。
+- 广告样本不足只降低 Fang 报告结论及报告优先级，不改写系统 `final_action` 或 `priority`。
 - ToDo 应保留系统 `final_action` 与系统 `priority`，报告优先级不得替代它们。
