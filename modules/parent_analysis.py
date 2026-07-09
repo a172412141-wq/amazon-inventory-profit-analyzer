@@ -114,9 +114,13 @@ def _parent_status(row: pd.Series, imbalanced_parents: set[str], thresholds: dic
     return "父体需复核"
 
 
-def analyze_parent(df: pd.DataFrame, thresholds: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+def analyze_parent(
+    df: pd.DataFrame,
+    thresholds: dict | None = None,
+    sales_period: str | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     anomalies = parent_structure_anomalies(df)
-    summary = aggregate_dimension(df, "parent_asin")
+    summary = aggregate_dimension(df, "parent_asin", sales_period=sales_period)
     if summary.empty:
         return summary, anomalies
 
@@ -128,6 +132,9 @@ def analyze_parent(df: pd.DataFrame, thresholds: dict | None = None) -> tuple[pd
         "sku_count",
         "spu",
         "product_line",
+        "selected_sales_units",
+        "selected_sales_amount",
+        "selected_daily_sales_units",
         "sales_7d_units",
         "sales_14d_units",
         "sales_7d_amount",

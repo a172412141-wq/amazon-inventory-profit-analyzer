@@ -27,6 +27,8 @@ cashflow:
 ads:
   acos_warning_ratio: 1.0
   no_conversion_min_spend: 0
+  minimum_spend_for_reliable_acos: 20
+  minimum_clicks_for_reliable_cvr: 20
 
 ranking:
   top_percent: 0.20

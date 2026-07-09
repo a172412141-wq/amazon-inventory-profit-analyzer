@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,14 @@ import streamlit as st
 from modules.export_report import export_analysis_report
 from modules.loader import get_sheet_summaries, load_mapped_sheet, load_yaml
 from modules.parent_analysis import analyze_parent
+from modules.periods import (
+    DEFAULT_SALES_PERIOD,
+    SALES_PERIOD_OPTIONS,
+    normalize_sales_period,
+    sales_period_amount_column,
+    sales_period_label,
+    sales_period_units_column,
+)
 from modules.pipeline import build_overview, prepare_full_sku_table, run_analysis
 from modules.product_line_analysis import analyze_product_lines
 from modules.product_line_diagnosis import build_product_line_diagnosis
@@ -193,6 +202,25 @@ APP_STYLES = """
     .section-intro h2 { color: var(--brand-ink); margin-bottom: 4px; }
     .section-intro p { color: var(--muted); margin: 0; }
     .metric-group-title { color: #344054; font-size: 14px; font-weight: 700; margin: 20px 0 10px; }
+    .line-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px 18px;
+        margin: 12px 0;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    }
+    .line-card-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+    .line-card-title { color: var(--brand-ink); font-size: 18px; font-weight: 760; }
+    .line-card-badge { color: #2949A3; background: var(--brand-soft); border: 1px solid #D9E4FF; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 700; }
+    .line-card-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .line-card-section { border-top: 1px solid #EEF2F7; padding-top: 10px; min-width: 0; }
+    .line-card-section:first-child { border-top: 0; padding-top: 0; }
+    .line-card-section h4 { color: #344054; font-size: 13px; margin: 0 0 8px; }
+    .line-card-section p { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 4px 0; }
+    .line-card-value { color: var(--brand-ink); font-weight: 760; }
+    @media (max-width: 1100px) { .line-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 680px) { .line-card-grid { grid-template-columns: 1fr; } }
 </style>
 """
 COLUMN_LABELS = {
@@ -221,6 +249,9 @@ COLUMN_LABELS = {
     "sales_14d_units": "14天销量",
     "sales_7d_amount": "7天销售额",
     "sales_14d_amount": "14天销售额",
+    "selected_sales_units": "当前周期销量",
+    "selected_sales_amount": "当前周期销售额",
+    "selected_daily_sales_units": "当前周期日均销量",
     "avg_sales_7d": "7天日均销量",
     "avg_sales_14d": "14天日均销量",
     "main_daily_sales": "主日均销量",
@@ -361,6 +392,31 @@ def _clear_filter_state() -> None:
         st.session_state.pop(_filter_key(column), None)
 
 
+def _render_sales_period_filter() -> str:
+    labels = {period: sales_period_label(period) for period in SALES_PERIOD_OPTIONS}
+    current = normalize_sales_period(st.session_state.get("sales_period", DEFAULT_SALES_PERIOD))
+    st.markdown("#### 快速周期")
+    if hasattr(st, "segmented_control"):
+        selected_label = st.segmented_control(
+            "数据周期",
+            options=[labels[period] for period in SALES_PERIOD_OPTIONS],
+            default=labels[current],
+            key="sales_period_segmented",
+        )
+        selected = next((period for period, label in labels.items() if label == selected_label), DEFAULT_SALES_PERIOD)
+        st.session_state["sales_period"] = selected
+        return selected
+    selected = st.radio(
+        "数据周期",
+        SALES_PERIOD_OPTIONS,
+        index=SALES_PERIOD_OPTIONS.index(current),
+        format_func=lambda period: labels[period],
+        horizontal=True,
+        key="sales_period",
+    )
+    return normalize_sales_period(selected)
+
+
 def _format_metric(value: Any, percent: bool = False, money: bool = False) -> str:
     if pd.isna(value):
         return "-"
@@ -368,6 +424,8 @@ def _format_metric(value: Any, percent: bool = False, money: bool = False) -> st
         number = float(value)
     except (TypeError, ValueError):
         return str(value)
+    if not np.isfinite(number):
+        return "∞" if number > 0 else "-"
     if percent:
         return f"{number:.2%}"
     if money:
@@ -600,13 +658,14 @@ def _build_filtered_tables(
     full: pd.DataFrame,
     data_errors: pd.DataFrame,
     thresholds: dict[str, Any],
+    sales_period: str,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, Any], str]:
     role_reports = build_sku_role_reports(full, thresholds)
-    parent_analysis, parent_structure = analyze_parent(full, thresholds)
-    spu_analysis = analyze_spu(full, thresholds)
-    product_line_analysis = analyze_product_lines(full, thresholds)
+    parent_analysis, parent_structure = analyze_parent(full, thresholds, sales_period=sales_period)
+    spu_analysis = analyze_spu(full, thresholds, sales_period=sales_period)
+    product_line_analysis = analyze_product_lines(full, thresholds, sales_period=sales_period)
     full_sku = prepare_full_sku_table(full)
-    metrics, summary, overview = build_overview(full_sku, role_reports, thresholds)
+    metrics, summary, overview = build_overview(full_sku, role_reports, thresholds, sales_period=sales_period)
     visible_skus = set(full_sku["sku"].astype(str)) if "sku" in full_sku.columns else set()
     tables = {
         "overview": overview,
@@ -624,87 +683,90 @@ def _build_filtered_tables(
     return tables, metrics, summary
 
 
-def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: str) -> None:
+def _render_dashboard(full_sku: pd.DataFrame, metrics: dict[str, Any], summary: str, sales_period: str) -> None:
+    period_label = sales_period_label(sales_period)
     metric_groups = [
         (
             "核心经营结果",
             [
-                ("14天销售额", False, True),
-                ("订单毛利润", False, True),
-                ("平均毛利率", True, False),
-                ("整体 ACOAS", True, False),
+                (f"{period_label}销售额", "当前周期销售额", False, True),
+                ("订单毛利润", "订单毛利润", False, True),
+                ("平均毛利率", "平均毛利率", True, False),
+                ("整体 ACOAS", "整体 ACOAS", True, False),
             ],
         ),
         (
             "库存与现金流",
             [
-                ("可售库存天数", False, False),
-                ("在途库存天数", False, False),
-                ("90天+库存占比", True, False),
-                ("库龄超过90天合计数量", False, False),
+                ("可售库存天数", "可售库存天数", False, False),
+                ("在途库存天数", "在途库存天数", False, False),
+                ("90天+库存占比", "90天+库存占比", True, False),
+                ("库龄超过90天合计数量", "库龄超过90天合计数量", False, False),
             ],
         ),
         (
             "当前行动队列",
             [
-                ("紧急补货 SKU 数", False, False),
-                ("清货/停补 SKU 数", False, False),
-                ("主力 SKU 数", False, False),
-                ("低效异常 SKU 数", False, False),
+                ("紧急补货 SKU 数", "紧急补货 SKU 数", False, False),
+                ("清货/停补 SKU 数", "清货/停补 SKU 数", False, False),
+                ("主力 SKU 数", "主力 SKU 数", False, False),
+                ("低效异常 SKU 数", "低效异常 SKU 数", False, False),
             ],
         ),
     ]
     for group_title, metric_specs in metric_groups:
         st.markdown(f'<div class="metric-group-title">{group_title}</div>', unsafe_allow_html=True)
         cols = st.columns(4)
-        for col, (label, is_percent, is_money) in zip(cols, metric_specs):
-            col.metric(label, _format_metric(metrics.get(label), is_percent, is_money))
+        for col, (label, metric_key, is_percent, is_money) in zip(cols, metric_specs):
+            col.metric(label, _format_metric(metrics.get(metric_key), is_percent, is_money))
 
     st.markdown("#### 自动经营摘要")
     st.info(summary)
 
     detail_specs = [
-        ("SKU 总数", False, False),
-        ("父体数", False, False),
-        ("SPU 数", False, False),
-        ("品线数", False, False),
-        ("14天销售额", False, True),
-        ("14天销量", False, False),
-        ("目前日均销量", False, False),
-        ("目前日均销售额", False, True),
-        ("理想周转情况下日销量", False, False),
-        ("总广告花费", False, True),
-        ("广告销售额", False, True),
-        ("整体 ACOS", True, False),
-        ("整体 ACOAS", True, False),
-        ("广告订单占比", True, False),
-        ("CPC", False, True),
-        ("CTR", True, False),
-        ("CVR", True, False),
-        ("广告CVR", True, False),
-        ("订单毛利润", False, True),
-        ("平均毛利率", True, False),
-        ("总库存/总供给", False, False),
-        ("可售库存天数", False, False),
-        ("在途库存天数", False, False),
-        ("61-90天可售库存量", False, False),
-        ("91-180天可售库存量", False, False),
-        ("180天+可售库存量", False, False),
-        ("库龄超过90天合计数量", False, False),
-        ("90天+库存占比", True, False),
-        ("建议补货总量", False, False),
-        ("清货风险 SKU 数", False, False),
-        ("禁止补货 SKU 数", False, False),
-        ("立即补货 SKU 数", False, False),
-        ("引流 SKU 数", False, False),
-        ("主力 SKU 数", False, False),
-        ("利润 SKU 数", False, False),
-        ("低效异常 SKU 数", False, False),
+        ("SKU 总数", "SKU 总数", False, False),
+        ("父体数", "父体数", False, False),
+        ("SPU 数", "SPU 数", False, False),
+        ("品线数", "品线数", False, False),
+        (f"{period_label}销售额", "当前周期销售额", False, True),
+        (f"{period_label}销量", "当前周期销量", False, False),
+        (f"{period_label}日均销量", "当前周期日均销量", False, False),
+        (f"{period_label}日均销售额", "当前周期日均销售额", False, True),
+        ("14天销售额", "14天销售额", False, True),
+        ("14天销量", "14天销量", False, False),
+        ("理想周转情况下日销量", "理想周转情况下日销量", False, False),
+        ("总广告花费", "总广告花费", False, True),
+        ("广告销售额", "广告销售额", False, True),
+        ("整体 ACOS", "整体 ACOS", True, False),
+        ("整体 ACOAS", "整体 ACOAS", True, False),
+        ("广告订单占比", "广告订单占比", True, False),
+        ("CPC", "CPC", False, True),
+        ("CTR", "CTR", True, False),
+        ("CVR", "CVR", True, False),
+        ("广告CVR", "广告CVR", True, False),
+        ("订单毛利润", "订单毛利润", False, True),
+        ("平均毛利率", "平均毛利率", True, False),
+        ("总库存/总供给", "总库存/总供给", False, False),
+        ("可售库存天数", "可售库存天数", False, False),
+        ("在途库存天数", "在途库存天数", False, False),
+        ("61-90天可售库存量", "61-90天可售库存量", False, False),
+        ("91-180天可售库存量", "91-180天可售库存量", False, False),
+        ("180天+可售库存量", "180天+可售库存量", False, False),
+        ("库龄超过90天合计数量", "库龄超过90天合计数量", False, False),
+        ("90天+库存占比", "90天+库存占比", True, False),
+        ("建议补货总量", "建议补货总量", False, False),
+        ("清货风险 SKU 数", "清货风险 SKU 数", False, False),
+        ("禁止补货 SKU 数", "禁止补货 SKU 数", False, False),
+        ("立即补货 SKU 数", "立即补货 SKU 数", False, False),
+        ("引流 SKU 数", "引流 SKU 数", False, False),
+        ("主力 SKU 数", "主力 SKU 数", False, False),
+        ("利润 SKU 数", "利润 SKU 数", False, False),
+        ("低效异常 SKU 数", "低效异常 SKU 数", False, False),
     ]
     with st.expander("查看全部经营指标"):
         details = [
-            {"指标": label, "数值": _format_metric(metrics.get(label), is_percent, is_money)}
-            for label, is_percent, is_money in detail_specs
+            {"指标": label, "数值": _format_metric(metrics.get(metric_key), is_percent, is_money)}
+            for label, metric_key, is_percent, is_money in detail_specs
         ]
         st.dataframe(pd.DataFrame(details), use_container_width=True, hide_index=True, height=460)
 
@@ -734,6 +796,125 @@ def _render_table(
     )
 
 
+def _product_line_scope(full: pd.DataFrame, product_line: str) -> pd.DataFrame:
+    if "product_line" not in full.columns:
+        return pd.DataFrame(columns=full.columns)
+    values = full["product_line"].astype("string").fillna("").str.strip()
+    return full[values == str(product_line).strip()].copy()
+
+
+def _text_count(df: pd.DataFrame, column: str) -> int:
+    if column not in df.columns:
+        return 0
+    values = df[column].astype("string").fillna("").str.strip()
+    return int(values[~values.isin(["", "nan", "none", "<NA>"])].nunique())
+
+
+def _product_line_card_rows(
+    full: pd.DataFrame,
+    product_line_summary: pd.DataFrame,
+    sales_period: str,
+) -> list[dict[str, Any]]:
+    if full.empty or product_line_summary.empty or "product_line" not in full.columns:
+        return []
+    summary = product_line_summary.copy()
+    if "dimension_type" in summary.columns:
+        summary = summary[summary["dimension_type"].astype("string").fillna("").eq("product_line")]
+    if summary.empty:
+        return []
+    if "dimension_value" not in summary.columns:
+        summary["dimension_value"] = summary.get("product_line", "")
+    amount_column = "selected_sales_amount" if "selected_sales_amount" in summary.columns else sales_period_amount_column(sales_period)
+    if amount_column in summary.columns:
+        summary = summary.assign(_sort_sales=pd.to_numeric(summary[amount_column], errors="coerce").fillna(0.0))
+        summary = summary.sort_values("_sort_sales", ascending=False)
+
+    rows: list[dict[str, Any]] = []
+    for _, row in summary.iterrows():
+        line = str(row.get("dimension_value", row.get("product_line", ""))).strip()
+        if not line or line.lower() in {"nan", "none", "<na>"}:
+            continue
+        line_df = _product_line_scope(full, line)
+        final_actions = line_df.get("final_action", pd.Series(dtype="string")).astype("string").fillna("").str.strip()
+        priorities = line_df.get("priority", pd.Series(dtype="string")).astype("string").fillna("").str.strip()
+        action_counts = final_actions[final_actions != ""].value_counts().head(3)
+        rows.append(
+            {
+                "product_line": line,
+                "line_status": row.get("line_status", ""),
+                "operation_recommendation": row.get("operation_recommendation", ""),
+                "sales_amount": row.get("selected_sales_amount", row.get(sales_period_amount_column(sales_period), np.nan)),
+                "sales_units": row.get("selected_sales_units", row.get(sales_period_units_column(sales_period), np.nan)),
+                "gross_profit": row.get("order_gross_profit", np.nan),
+                "gross_margin": row.get("order_gross_margin", np.nan),
+                "acoas": row.get("acoas", np.nan),
+                "weighted_stock_days": row.get("weighted_stock_days", np.nan),
+                "available_stock_qty": row.get("available_stock_qty", np.nan),
+                "aged_inventory_90_plus": row.get("aged_inventory_90_plus", np.nan),
+                "p0_p1_count": int(priorities.isin(["P0", "P1"]).sum()),
+                "urgent_replenishment_count": int(final_actions.isin(["立即补货", "优先补货"]).sum()),
+                "clearance_stop_count": int(final_actions.isin(["清货处理", "禁止补货", "高毛利停补"]).sum()),
+                "action_summary": "、".join(f"{action} {count}个" for action, count in action_counts.items()) or "暂无系统动作",
+                "sku_count": int(row.get("sku_count", len(line_df))),
+                "parent_count": int(row.get("parent_count", _text_count(line_df, "parent_asin")) or 0),
+                "spu_count": _text_count(line_df, "spu"),
+            }
+        )
+    return rows
+
+
+def _render_product_line_cards(
+    full: pd.DataFrame,
+    product_line_summary: pd.DataFrame,
+    sales_period: str,
+) -> None:
+    rows = _product_line_card_rows(full, product_line_summary, sales_period)
+    if not rows:
+        st.info("缺少品线字段，暂时无法生成品线卡片。")
+        return
+    period_label = sales_period_label(sales_period)
+    for row in rows:
+        status = str(row.get("line_status") or "待判断")
+        recommendation = str(row.get("operation_recommendation") or "待复核")
+        st.markdown(
+            f"""
+            <section class="line-card">
+                <div class="line-card-header">
+                    <div class="line-card-title">{escape(str(row["product_line"]))}</div>
+                    <div class="line-card-badge">{escape(status)} · {escape(recommendation)}</div>
+                </div>
+                <div class="line-card-grid">
+                    <div class="line-card-section">
+                        <h4>核心经营结果</h4>
+                        <p>{period_label}销售额 <span class="line-card-value">{_format_metric(row["sales_amount"], money=True)}</span></p>
+                        <p>订单毛利润 <span class="line-card-value">{_format_metric(row["gross_profit"], money=True)}</span></p>
+                        <p>毛利率 <span class="line-card-value">{_format_metric(row["gross_margin"], percent=True)}</span> · ACOAS <span class="line-card-value">{_format_metric(row["acoas"], percent=True)}</span></p>
+                    </div>
+                    <div class="line-card-section">
+                        <h4>库存与现金流</h4>
+                        <p>加权库存天数 <span class="line-card-value">{_format_metric(row["weighted_stock_days"])}</span></p>
+                        <p>可售库存 <span class="line-card-value">{_format_metric(row["available_stock_qty"])}</span></p>
+                        <p>90天+库龄 <span class="line-card-value">{_format_metric(row["aged_inventory_90_plus"])}</span></p>
+                    </div>
+                    <div class="line-card-section">
+                        <h4>当前行动队列</h4>
+                        <p>P0/P1 <span class="line-card-value">{row["p0_p1_count"]}</span> 个</p>
+                        <p>紧急补货 <span class="line-card-value">{row["urgent_replenishment_count"]}</span> 个 · 清货/停补 <span class="line-card-value">{row["clearance_stop_count"]}</span> 个</p>
+                        <p>{escape(str(row["action_summary"]))}</p>
+                    </div>
+                    <div class="line-card-section">
+                        <h4>数据</h4>
+                        <p>SKU <span class="line-card-value">{row["sku_count"]}</span> 个 · 父体 <span class="line-card-value">{row["parent_count"]}</span> 个</p>
+                        <p>SPU <span class="line-card-value">{row["spu_count"]}</span> 个 · {period_label}销量 <span class="line-card-value">{_format_metric(row["sales_units"])}</span></p>
+                        <p>ACOAS = 广告花费 / {period_label}总销售额</p>
+                    </div>
+                </div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
 def _format_core_metric_value(metric: str, value: Any) -> str:
     if metric in {"利润率", "广告花费占比"}:
         return _format_metric(value, percent=True)
@@ -761,7 +942,7 @@ def _render_narrative_summary(summary: dict[str, str], sections: list[tuple[str,
             st.markdown(f"**{label}**  \n{text}")
 
 
-def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
+def _render_product_line_diagnosis(full: pd.DataFrame, thresholds: dict[str, Any], sales_period: str) -> None:
     st.divider()
     st.subheader("品线经营诊断")
     product_lines = _options(full, "product_line")
@@ -778,6 +959,8 @@ def _render_product_line_diagnosis(full: pd.DataFrame) -> None:
         selected_line,
         owner=default_owner,
         start_date=todo_start_date,
+        thresholds=thresholds,
+        sales_period=sales_period,
     )
 
     st.markdown("### 一、管理层汇报摘要")
@@ -912,6 +1095,8 @@ def main() -> None:
     full = analysis["full"]
     with st.sidebar:
         st.header("筛选分析范围")
+        sales_period = _render_sales_period_filter()
+        st.caption(f"默认优先展示 7天；当前销售额、销量和 ACOAS 按 {sales_period_label(sales_period)} 口径重算。")
         st.caption("筛选器彼此联动，并同步影响全部页面、图表和导出结果。")
         st.button("清空所有筛选", use_container_width=True, on_click=_clear_filter_state)
         filters = _render_linked_filters(full, FILTER_COLUMNS)
@@ -925,6 +1110,7 @@ def main() -> None:
         filtered_full,
         analysis["data_errors"],
         thresholds,
+        sales_period,
     )
 
     st.caption(f"分析范围：{len(filtered_full):,} / {len(full):,} 个 SKU")
@@ -932,7 +1118,7 @@ def main() -> None:
 
     with tabs[0]:
         _render_section_intro("经营总览")
-        _render_dashboard(report_tables["full_sku"], overview_metrics, overview_summary)
+        _render_dashboard(report_tables["full_sku"], overview_metrics, overview_summary, sales_period)
         render_visualizations("总览 Dashboard", report_tables)
     with tabs[1]:
         _render_section_intro("引流 SKU")
@@ -959,11 +1145,14 @@ def main() -> None:
         render_visualizations("父体分析", report_tables)
     with tabs[6]:
         _render_section_intro("SPU / 品线")
+        if not filters:
+            st.markdown("#### 品线经营卡片")
+            _render_product_line_cards(filtered_full, report_tables["product_line_analysis"], sales_period)
         st.markdown("#### SPU 汇总")
         _render_table(report_tables["spu_analysis"], height=420, table_key="spu_analysis")
         st.markdown("#### 品线汇总")
         _render_table(report_tables["product_line_analysis"], height=420, table_key="product_line_analysis")
-        _render_product_line_diagnosis(filtered_full)
+        _render_product_line_diagnosis(filtered_full, thresholds, sales_period)
         render_visualizations("SPU / 品线分析", report_tables)
     with tabs[7]:
         _render_section_intro("全部 SKU")

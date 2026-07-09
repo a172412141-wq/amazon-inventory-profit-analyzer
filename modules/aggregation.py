@@ -5,6 +5,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .periods import sales_period_amount_column, sales_period_days, sales_period_units_column
+
 
 SUM_FIELDS = [
     "sales_7d_units",
@@ -56,22 +58,45 @@ def _unique_join(group: pd.DataFrame, column: str) -> str:
     return "、".join(values[:8])
 
 
-def _gross_margin_from_sales_amount(row: dict[str, Any]) -> float:
-    gross_profit = row.get("order_gross_profit", 0.0)
-    sales_amount = row.get("sales_7d_amount", 0.0)
+def _row_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _sales_amount_for_margin(row: dict[str, Any], sales_period: str | None = None) -> float:
+    if sales_period is not None:
+        return _row_float(row.get(sales_period_amount_column(sales_period), 0.0))
+    sales_amount = _row_float(row.get("sales_7d_amount", 0.0))
     if sales_amount <= 0:
-        sales_amount = row.get("sales_14d_amount", 0.0)
+        sales_amount = _row_float(row.get("sales_14d_amount", 0.0))
+    return sales_amount
+
+
+def _gross_margin_from_sales_amount(row: dict[str, Any], sales_period: str | None = None) -> float:
+    gross_profit = _row_float(row.get("order_gross_profit", 0.0))
+    sales_amount = _sales_amount_for_margin(row, sales_period)
     return float(gross_profit / sales_amount) if sales_amount > 0 else np.nan
 
 
-def _total_sales_amount(row: dict[str, Any]) -> float:
-    sales_amount = row.get("sales_14d_amount", 0.0)
+def _total_sales_amount(row: dict[str, Any], sales_period: str | None = None) -> float:
+    if sales_period is not None:
+        return _row_float(row.get(sales_period_amount_column(sales_period), 0.0))
+    sales_amount = _row_float(row.get("sales_14d_amount", 0.0))
     if sales_amount <= 0:
-        sales_amount = row.get("sales_7d_amount", 0.0)
+        sales_amount = _row_float(row.get("sales_7d_amount", 0.0))
     return float(sales_amount)
 
 
-def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | None = None) -> pd.DataFrame:
+def aggregate_dimension(
+    df: pd.DataFrame,
+    group_col: str,
+    dimension_type: str | None = None,
+    sales_period: str | None = None,
+) -> pd.DataFrame:
     if group_col not in df.columns:
         return pd.DataFrame()
 
@@ -98,6 +123,14 @@ def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | 
                 continue
             row[field] = _sum(group, field)
 
+        if sales_period is not None:
+            units_column = sales_period_units_column(sales_period)
+            amount_column = sales_period_amount_column(sales_period)
+            period_days = sales_period_days(sales_period)
+            row["selected_sales_units"] = row.get(units_column, 0.0)
+            row["selected_sales_amount"] = row.get(amount_column, 0.0)
+            row["selected_daily_sales_units"] = row["selected_sales_units"] / period_days if period_days > 0 else np.nan
+
         avg_sales_7d_sum = row.get("sales_7d_units", 0.0) / 7
         available_stock = row.get("available_stock_qty", row.get("available_qty", 0.0))
         row["weighted_stock_days"] = (
@@ -109,10 +142,10 @@ def aggregate_dimension(df: pd.DataFrame, group_col: str, dimension_type: str | 
         ad_sales = row.get("ad_sales", 0.0)
         ad_spend = row.get("ad_spend", 0.0)
         row["acos"] = ad_spend / ad_sales if ad_sales > 0 else (np.inf if ad_spend > 0 else np.nan)
-        total_sales_amount = _total_sales_amount(row)
+        total_sales_amount = _total_sales_amount(row, sales_period)
         row["acoas"] = ad_spend / total_sales_amount if total_sales_amount > 0 else (np.inf if ad_spend > 0 else np.nan)
 
-        row["order_gross_margin"] = _gross_margin_from_sales_amount(row)
+        row["order_gross_margin"] = _gross_margin_from_sales_amount(row, sales_period)
 
         avg_7d = row.get("sales_7d_units", 0.0) / 7
         avg_14d = row.get("sales_14d_units", 0.0) / 14

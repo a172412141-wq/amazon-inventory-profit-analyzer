@@ -7,12 +7,23 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .periods import sales_period_amount_column, sales_period_days, sales_period_label, sales_period_units_column
+
 
 PROBLEM_PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 BUSINESS_PRIORITY_ORDER = {"周转": 0, "规模": 1, "毛利润": 2, "毛利率": 3, "数据可信度": 4}
 RISK_ACTIONS = {"清货处理", "禁止补货", "高毛利停补", "控广告", "暂缓补货"}
 URGENT_ACTIONS = {"立即补货", "优先补货"}
 ROLE_ORDER = ["引流 SKU", "主力 SKU", "利润 SKU", "低效异常 SKU"]
+
+
+def _threshold(thresholds: dict[str, Any] | None, path: tuple[str, ...], default: float) -> float:
+    current: Any = thresholds or {}
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return default
+        current = current[key]
+    return float(current)
 
 
 def _num(df: pd.DataFrame, column: str, default: float = 0.0) -> pd.Series:
@@ -99,7 +110,7 @@ def _concentration_label(share: float) -> str:
     return "相对分散"
 
 
-def _prepare(df: pd.DataFrame) -> pd.DataFrame:
+def _prepare(df: pd.DataFrame, sales_period: str | None = None) -> pd.DataFrame:
     result = df.copy()
     result["_sku"] = _text(result, "sku")
     result["_product_line"] = _text(result, "product_line")
@@ -115,15 +126,24 @@ def _prepare(df: pd.DataFrame) -> pd.DataFrame:
     sales_7d_amount = _num(result, "sales_7d_amount", np.nan)
     sales_14d_units = _num(result, "sales_14d_units", np.nan)
     sales_7d_units = _num(result, "sales_7d_units", np.nan)
-    result["_sales_amount"] = sales_14d_amount.where(sales_14d_amount > 0, sales_7d_amount).fillna(0.0)
-    result["_sales_units"] = sales_14d_units.where(sales_14d_units > 0, sales_7d_units).fillna(0.0)
-    result["_daily_units"] = np.where(sales_14d_units > 0, sales_14d_units / 14, sales_7d_units / 7)
+    if sales_period is None:
+        result["_sales_amount"] = sales_14d_amount.where(sales_14d_amount > 0, sales_7d_amount).fillna(0.0)
+        result["_sales_units"] = sales_14d_units.where(sales_14d_units > 0, sales_7d_units).fillna(0.0)
+        result["_daily_units"] = np.where(sales_14d_units > 0, sales_14d_units / 14, sales_7d_units / 7)
+    else:
+        period_amount = _num(result, sales_period_amount_column(sales_period), np.nan)
+        period_units = _num(result, sales_period_units_column(sales_period), np.nan)
+        period_days = sales_period_days(sales_period)
+        result["_sales_amount"] = period_amount.fillna(0.0)
+        result["_sales_units"] = period_units.fillna(0.0)
+        result["_daily_units"] = period_units / period_days if period_days > 0 else np.nan
     result["_daily_units"] = pd.to_numeric(pd.Series(result["_daily_units"], index=result.index), errors="coerce").fillna(0.0)
     result["_average_price"] = _safe_divide(result["_sales_amount"], result["_sales_units"]).fillna(0.0)
     result["_gross_profit"] = _num(result, "order_gross_profit", np.nan).fillna(0.0)
     calculated_margin = _safe_divide(result["_gross_profit"], result["_sales_amount"])
     result["_gross_margin"] = _num(result, "order_gross_margin", np.nan).where(_num(result, "order_gross_margin", np.nan).notna(), calculated_margin)
     result["_ad_spend"] = _num(result, "ad_spend", 0.0).fillna(0.0)
+    result["_ad_clicks"] = _num(result, "ad_clicks", 0.0).fillna(0.0)
     result["_acoas"] = _safe_divide(result["_ad_spend"], result["_sales_amount"])
     result["_available_stock_days"] = _num(result, "available_stock_days", np.nan)
     result["_stock_days"] = result["_available_stock_days"].where(result["_available_stock_days"].notna(), _num(result, "stock_days", np.nan))
@@ -178,7 +198,8 @@ def _add_shares(line_df: pd.DataFrame, prepared: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def _core_metrics(line_df: pd.DataFrame) -> pd.DataFrame:
+def _core_metrics(line_df: pd.DataFrame, sales_period: str | None = None) -> pd.DataFrame:
+    period_label = sales_period_label(sales_period) if sales_period is not None else "14天优先"
     sales = line_df["_sales_amount"].sum()
     units = line_df["_sales_units"].sum()
     daily_units = line_df["_daily_units"].sum()
@@ -196,13 +217,13 @@ def _core_metrics(line_df: pd.DataFrame) -> pd.DataFrame:
         {
             "指标": "销售额",
             "数值": sales,
-            "计算口径": "品线内 SKU 销售额合计，优先 14天销售额，缺失时使用 7天销售额",
+            "计算口径": f"品线内 SKU {period_label}销售额合计" if sales_period is not None else "品线内 SKU 销售额合计，优先 14天销售额，缺失时使用 7天销售额",
             "判断": f"前20% SKU（{sales_top_n}个）贡献 {_fmt_pct(sales_top_share)}，销售额集中度为{_concentration_label(sales_top_share)}。",
         },
         {
             "指标": "销量",
             "数值": units,
-            "计算口径": "品线内 SKU 销量合计，优先 14天销量，缺失时使用 7天销量",
+            "计算口径": f"品线内 SKU {period_label}销量合计" if sales_period is not None else "品线内 SKU 销量合计，优先 14天销量，缺失时使用 7天销量",
             "判断": f"日均销量 {_fmt_number(daily_units)}，平均销售价格 {_fmt_number(avg_price)}。",
         },
         {
@@ -774,7 +795,7 @@ def _available_stock_days_completeness(df: pd.DataFrame) -> float:
     return float(((available_source | fallback_source) & sales_source).mean())
 
 
-def _data_credibility(df: pd.DataFrame, product_line: str) -> pd.DataFrame:
+def _data_credibility(df: pd.DataFrame, product_line: str, sales_period: str | None = None) -> pd.DataFrame:
     if "product_line" in df.columns:
         line_mask = df["product_line"].astype("string").fillna("").str.strip().eq(str(product_line).strip())
         source = df[line_mask].copy()
@@ -803,7 +824,13 @@ def _data_credibility(df: pd.DataFrame, product_line: str) -> pd.DataFrame:
     profit_ratio = min(_field_completeness(source, "order_gross_profit"), _field_completeness(source, "order_gross_margin"))
     inventory_ratio = max(_available_stock_days_completeness(source), _field_completeness(source, "stock_days"))
     size_ratio = _field_completeness(source, "size")
-    sales_ratio = max(_field_completeness(source, "sales_14d_amount"), _field_completeness(source, "sales_7d_amount"))
+    if sales_period is None:
+        sales_ratio = max(_field_completeness(source, "sales_14d_amount"), _field_completeness(source, "sales_7d_amount"))
+    else:
+        sales_ratio = max(
+            _field_completeness(source, sales_period_amount_column(sales_period)),
+            _field_completeness(source, sales_period_units_column(sales_period)),
+        )
     ad_ratio = min(_field_completeness(source, "ad_spend"), _field_completeness(source, "ad_sales"))
 
     checks = [
@@ -872,7 +899,10 @@ def _relationship_diagnostics(
     sku_analysis: pd.DataFrame,
     data_credibility: pd.DataFrame,
     opportunity_skus: pd.DataFrame,
+    thresholds: dict[str, Any] | None = None,
+    sales_period: str | None = None,
 ) -> pd.DataFrame:
+    period_label = sales_period_label(sales_period) if sales_period is not None else "7天"
     rows: list[dict[str, Any]] = []
 
     def add(
@@ -919,7 +949,7 @@ def _relationship_diagnostics(
             "品线存在超长库存或核心SKU缺货风险，资金效率与规模承接发生冲突。",
             "可能造成资金长期占用，或因主力断货损失排名与规模。",
             "补货周期、活动计划、未来流量计划",
-            "逐SKU核对在途、补货周期和未来14天日销量计划。",
+            f"逐SKU核对在途、补货周期和未来{period_label}日销量计划。",
             "先执行系统库存动作；超长库存停补清理，主力缺货优先保障库存和核心流量。",
             "P0",
             "需处理",
@@ -1032,9 +1062,41 @@ def _relationship_diagnostics(
         )
 
     line_ad_spend = float(line_df["_ad_spend"].sum())
+    line_ad_clicks = float(line_df["_ad_clicks"].sum())
     line_acoas = _safe_divide(line_ad_spend, line_sales)
     ad_mismatch_count = int((sku_analysis["ad_sales_mismatch"] >= 0.15).sum())
-    if line_ad_spend > 0 and not pd.isna(line_margin) and line_acoas >= line_margin:
+    minimum_reliable_spend = _threshold(
+        thresholds,
+        ("ads", "minimum_spend_for_reliable_acos"),
+        20,
+    )
+    minimum_reliable_clicks = _threshold(
+        thresholds,
+        ("ads", "minimum_clicks_for_reliable_cvr"),
+        20,
+    )
+    clicks_provided = bool(_field_presence(line_df, "ad_clicks").any())
+    ad_sample_reliable = (
+        line_ad_spend >= minimum_reliable_spend
+        and clicks_provided
+        and line_ad_clicks >= minimum_reliable_clicks
+    )
+    if line_ad_spend > 0 and not ad_sample_reliable:
+        click_fact = f"广告点击 {_fmt_int(line_ad_clicks)}" if clicks_provided else "广告点击字段缺失"
+        add(
+            "毛利润",
+            "广告-销售-利润",
+            f"品线广告花费 {_fmt_number(line_ad_spend)}，{click_fact}；暂定可靠门槛为花费 {_fmt_number(minimum_reliable_spend)}、点击 {_fmt_int(minimum_reliable_clicks)}。",
+            "待验证假设",
+            f"广告样本不足，当前ACOAS {_fmt_pct(line_acoas)} 不能被定义为品线核心矛盾。",
+            "当前只能确认广告样本规模，无法可靠判断广告对规模和毛利润的持续影响。",
+            "更多广告花费与点击样本、广告归因周期、自然订单变化",
+            "先累积达到暂定门槛的同口径样本，再复核ACOAS、转化和毛利润关系。",
+            "保留系统动作作为独立判断；Fang报告不因当前小样本提升广告问题优先级。",
+            "P3",
+            "待验证",
+        )
+    elif line_ad_spend > 0 and not pd.isna(line_margin) and line_acoas >= line_margin:
         add(
             "毛利润",
             "广告-销售-利润",
@@ -1043,7 +1105,7 @@ def _relationship_diagnostics(
             "广告花费占销售额比例已触及或超过利润空间，广告可能放大利润压力。",
             "继续按历史结构投放可能挤压实际毛利润。",
             "广告归因周期、自然订单变化、搜索词明细",
-            "固定7天窗口拆分广告与自然销量，验证核心词和低效词的真实贡献。",
+            f"固定{period_label}窗口拆分广告与自然销量，验证核心词和低效词的真实贡献。",
             "保留核心流量，降低高花费低转化投放，并对无订单搜索词做否定。",
             "P1" if line_profit > 0 else "P0",
             "需处理",
@@ -1071,7 +1133,7 @@ def _relationship_diagnostics(
             "当前广告投入与销售贡献关系相对匹配。",
             "广告风险暂时可控。",
             "自然订单变化和广告归因周期",
-            "维持7天复核窗口。",
+            f"维持{period_label}复核窗口。",
             "保持角色化预算分配，不按历史预算惯性延续。",
             "P3",
             "正常",
@@ -1284,7 +1346,9 @@ def _conclusions(
     core_metrics: pd.DataFrame,
     problem_skus: pd.DataFrame,
     opportunity_skus: pd.DataFrame,
+    sales_period: str | None = None,
 ) -> list[str]:
+    period_label = sales_period_label(sales_period) if sales_period is not None else "当前"
     sales = line_df["_sales_amount"].sum()
     units = line_df["_sales_units"].sum()
     profit = line_df["_gross_profit"].sum()
@@ -1297,7 +1361,7 @@ def _conclusions(
     top_problem = problem_skus.iloc[0]["问题事实"] if not problem_skus.empty else "暂无 P0/P1 级确定问题"
     top_opportunity = opportunity_skus.iloc[0]["机会类型"] if not opportunity_skus.empty else "暂无高置信度扩量机会"
     return [
-        f"{product_line} 当前覆盖 {len(line_df)} 个 SKU、{parent_count} 个父ASIN，销售额 {_fmt_number(sales)}，销量 {_fmt_int(units)}；{concentration}",
+        f"{product_line} 当前覆盖 {len(line_df)} 个 SKU、{parent_count} 个父ASIN，{period_label}销售额 {_fmt_number(sales)}，销量 {_fmt_int(units)}；{concentration}",
         f"品线利润额 {_fmt_number(profit)}，加权利润率 {_fmt_pct(margin)}，该利润率按利润额合计除以销售额合计计算。",
         f"品线广告花费 {_fmt_number(ad_spend)}，ACOAS {_fmt_pct(acoas)}；需要重点检查广告资源是否与销售和利润贡献匹配。",
         f"当前最大问题：{top_problem}。",
@@ -1417,9 +1481,11 @@ def build_product_line_diagnosis(
     top_n: int = 20,
     owner: str = "待指定",
     start_date: date | None = None,
+    thresholds: dict[str, Any] | None = None,
+    sales_period: str | None = None,
 ) -> dict[str, Any]:
     todo_start_date = start_date or date.today()
-    prepared = _prepare(df)
+    prepared = _prepare(df, sales_period)
     line_df = _line_scope(prepared, product_line)
     if line_df.empty:
         empty = pd.DataFrame()
@@ -1447,13 +1513,20 @@ def build_product_line_diagnosis(
         }
     line_df = _add_shares(line_df, prepared)
     sku_analysis = _build_sku_analysis(line_df, prepared)
-    core_metrics = _core_metrics(line_df)
+    core_metrics = _core_metrics(line_df, sales_period)
     role_structure = _role_structure(line_df)
     sku_contribution = _sku_contribution_table(sku_analysis)
     problem_skus = _problem_skus(sku_analysis, top_n)
     opportunity_skus = _opportunity_skus(sku_analysis)
-    data_credibility = _data_credibility(df, product_line)
-    relationship_diagnostics = _relationship_diagnostics(line_df, sku_analysis, data_credibility, opportunity_skus)
+    data_credibility = _data_credibility(df, product_line, sales_period)
+    relationship_diagnostics = _relationship_diagnostics(
+        line_df,
+        sku_analysis,
+        data_credibility,
+        opportunity_skus,
+        thresholds,
+        sales_period,
+    )
     todo_list = _product_line_todo_list(
         product_line,
         relationship_diagnostics,
@@ -1462,7 +1535,7 @@ def build_product_line_diagnosis(
         owner,
         todo_start_date,
     )
-    conclusions = _conclusions(product_line, line_df, core_metrics, problem_skus, opportunity_skus)
+    conclusions = _conclusions(product_line, line_df, core_metrics, problem_skus, opportunity_skus, sales_period)
     return {
         "product_line": product_line,
         "conclusions": conclusions,

@@ -1,17 +1,27 @@
 # HANDOFF.md
 
-最后更新：2026-06-18（Asia/Shanghai）
+最后更新：2026-07-08（Asia/Shanghai）
 
 ## 当前目标
 
-继续完善 Amazon 库存利润分析器。本次把 Fang 品线诊断从“表格明细”升级为“先汇报、后明细”：增加管理层文字摘要和 ToDo 执行摘要，同时保留现有指标、诊断表和可编辑任务明细；底层指标、SKU 角色、系统动作和优先级保持不变。
+继续完善 Amazon 库存利润分析器。本次完成最高优先级缺口 `FANG_REL_008`：广告样本不足时降低 Fang 报告结论的确定性和优先级，同时保留现有系统动作、数据结构和角色判断。
 
 ## 仓库状态
 
 - 项目仓库：当前目录 `amazon-inventory-profit-analyzer/`。
-- 当前分支：`codex/fix-fang-data-credibility`，已推送并创建草稿 PR #1；本次汇报改造基于 `af7bda4 Fix Fang data credibility checks`。
+- 当前分支：`codex/fix-fang-data-credibility`，已推送并创建草稿 PR #1；当前 HEAD 为 `1f5e444 Add narrative product line reporting`。
 - 目标发布分支：`main`。
 - 外层 `New project/` 还有一个独立旧仓库；它不是本项目提交和状态判断的依据。
+
+当前未提交工作区包含此前规则治理文档和本次 `FANG_REL_008` 实现：
+
+- `docs/fang-rule-mapping.md`：新增 Fang 规则映射、阈值审计、原型合并决定和逐规则合并门槛。
+- `docs/decisions.md`：D-010 确认生产入口唯一、原型按规则吸收；D-011 记录广告样本不足只降级 Fang 报告。
+- `modules/product_line_diagnosis.py`：读取广告花费和点击样本，按暂定门槛降级广告关系诊断。
+- `app.py`：把生产阈值传入品线诊断。
+- `config/thresholds.yaml`：新增广告可靠样本暂定门槛，默认花费 20、点击 20。
+- `tests/test_product_line_diagnosis.py`：新增低花费、低点击、缺点击和等于门槛的边界测试。
+- `README.md`、`docs/business-rules.md`、`PLANS.md`、`HANDOFF.md`：同步行为边界、状态和下一步。
 
 本次汇报改造范围：
 
@@ -49,8 +59,8 @@
 ## 已验证
 
 - `.venv/bin/python -c "import app"`：通过。
-- `.venv/bin/python -m pytest -q -p no:cacheprovider`：原生运行 47 个测试，全部通过。
-- `tests/test_product_line_diagnosis.py`：8 个定向测试全部通过；覆盖数据可信度、管理层摘要、ToDo 摘要和报告层不改写系统判断。
+- `.venv/bin/python -m pytest -q -p no:cacheprovider`：原生运行 51 个测试，全部通过。
+- `tests/test_product_line_diagnosis.py`：12 个定向测试全部通过；覆盖数据可信度、管理层摘要、ToDo 摘要、`FANG_REL_008` 样本边界和报告层不改写系统判断。
 - Excel 11 Sheet 内存导出冒烟：通过。
 - Streamlit 本地启动成功，`/_stcore/health` 返回 `ok`。
 - 浏览器复核上传首页：应用正常启动，标题、上传区和使用说明正常显示，控制台无错误。因仓库无样例 Excel，本次未通过浏览器进入品线汇报页。
@@ -60,7 +70,8 @@
 
 1. `st.data_editor` 的返回值尚未接收；ToDo 可在页面编辑，但没有明确的持久化或 Excel 导出闭环。
 2. 尚无可提交的输入样例文件用于端到端上传验证；`output/reports/` 中只有被忽略的历史冒烟输出。
-3. 未跟踪的 `fang_diagnosis/` 与当前已上线的 `modules/product_line_diagnosis.py` 是两套潜在重复实现；在确认其用途前不得删除、提交或接入。
+3. 未跟踪的 `fang_diagnosis/` 仍没有统一入口和测试；已决定不整体接入，只能按映射清单逐规则迁移，在迁移完成前不得删除或作为第二套引擎运行。
+4. `FANG_REL_008` 的花费 20、点击 20 来自设计原型，规范原文没有量化该阈值；在至少三个不同案例验证前必须保持 provisional。
 
 ## 本轮筛选器命名发布
 
@@ -83,15 +94,38 @@
 - ToDo 摘要用文字汇报任务总量、P0/P1 数量、优先级分布、负责人、最近完成时间和前三项执行重点。
 - 可编辑 ToDo 表继续作为执行明细，字段和生成逻辑不变。
 
+## 本次 Fang 规则治理
+
+- 已对用户提供的 DOCX 原文件重新计算 SHA-256：`5f793dfc0a77a6c8e4d3d06f51b84e94e50887373282edf92e439021672315bf`，与记录一致。
+- `modules/product_line_diagnosis.py::build_product_line_diagnosis` 保持为唯一生产入口。
+- 未跟踪原型不整体提交或接入，先吸收规则 ID、版本、来源和证据结构，再逐条迁移校验与关系规则。
+- 原型中没有案例记录的数值阈值不得标为稳定，也不得覆盖 `config/thresholds.yaml`。
+- 完整规则状态和缺口见 `docs/fang-rule-mapping.md`，架构决定见 `docs/decisions.md` D-010。
+
+## 本次 FANG_REL_008 实现
+
+- 品线广告花费 `< 20`、广告点击 `< 20` 或点击字段缺失时，广告关系结论降为“待验证假设”、P3、“待验证”。
+- 花费和点击均 `>= 20` 时，保留原有广告-销售-利润关系判断；等于门槛的边界已有测试。
+- 门槛进入生产 `config/thresholds.yaml`，但按 provisional 使用，不从原型配置自动加载。
+- 系统 `final_action`、系统 `priority`、SKU 角色和输入 DataFrame 均保持不变；`modules/recommendations.py` 未修改。
+
 ## 本轮发布验收
 
 - 动作模块恢复且规则不变：通过。
 - 应用导入与服务健康检查：通过。
-- 全量 47 个测试：通过。
+- 全量 51 个测试：通过。
 - Fang 诊断不改写 `sku_role`、`final_action`、`priority`：测试覆盖并通过。
 - 三级分类映射、完整 SKU 输出和跨维度联动：测试覆盖并通过。
 - Excel 导出与 `git diff --check`：通过。
 
+
+## 本轮 7/14 天周期与品线卡片优化
+
+- 侧边栏新增快速周期切换，默认 7 天，可切换 14 天。
+- 总览、父体、SPU、品线汇总和 Fang 品线诊断均接入同一个周期口径；整体 ACOAS 按筛选后广告花费 / 当前周期总销售额计算。
+- SPU / 品线页在未启用筛选时，为每条品线直接展示经营卡片，包含核心经营结果、库存与现金流、当前行动队列和数据。
+- 页面周期只影响展示、聚合和报告口径，不改写 SKU 角色、系统 final_action 或系统 priority。
+
 ## 后续候选任务
 
-准备一份可提交的脱敏样例 Excel，对管理层摘要、ToDo 摘要和完整上传路径做浏览器端到端验收；随后确认 ToDo 是仅会话编辑，还是需要纳入 Excel 导出或其他持久化。同时确认未跟踪 `fang_diagnosis/` 原型与当前品线诊断的关系。对应阶段见 `PLANS.md`。
+优先建立最小规则执行快照：规则 ID、版本、阈值值、阈值状态、输入字段、是否命中和降级原因；随后为 `FANG_REL_009` 增加广告字段冲突时阻断确定性报告建议的测试。对应映射见 `docs/fang-rule-mapping.md`。

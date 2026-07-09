@@ -261,3 +261,92 @@ def test_product_line_diagnosis_provides_management_and_todo_narratives():
     assert "Fang" in todo_summary["ownership_summary"]
     assert "2026-06-19" in todo_summary["schedule_summary"]
     assert "首要执行项" in todo_summary["execution_focus"]
+
+
+@pytest.mark.parametrize(
+    ("ad_spend", "ad_clicks"),
+    [
+        (19, 100),
+        (100, 19),
+        (100, None),
+    ],
+)
+def test_fang_rel_008_downgrades_ad_diagnosis_when_sample_is_insufficient(ad_spend, ad_clicks):
+    data = {
+        "sku": ["A"],
+        "parent_asin": ["P1"],
+        "product_line": ["L1"],
+        "sku_role": ["低效异常 SKU"],
+        "sales_14d_amount": [100],
+        "sales_14d_units": [10],
+        "order_gross_profit": [10],
+        "order_gross_margin": [0.10],
+        "ad_spend": [ad_spend],
+        "ad_sales": [20],
+        "stock_days": [45],
+        "available_qty": [20],
+        "final_action": ["控广告"],
+        "priority": ["P2"],
+    }
+    if ad_clicks is not None:
+        data["ad_clicks"] = [ad_clicks]
+    df = pd.DataFrame(data)
+    original = df.copy(deep=True)
+
+    report = build_product_line_diagnosis(
+        df,
+        "L1",
+        thresholds={
+            "ads": {
+                "minimum_spend_for_reliable_acos": 20,
+                "minimum_clicks_for_reliable_cvr": 20,
+            }
+        },
+    )
+    ad_diagnosis = report["relationship_diagnostics"].query("诊断关系 == '广告-销售-利润'").iloc[0]
+
+    assert ad_diagnosis["原因等级"] == "待验证假设"
+    assert ad_diagnosis["报告优先级"] == "P3"
+    assert ad_diagnosis["行动状态"] == "待验证"
+    assert "样本不足" in ad_diagnosis["诊断判断"]
+    assert "20" in ad_diagnosis["已确认事实"]
+    assert report["sku_contribution"].iloc[0]["系统final_action"] == "控广告"
+    pd.testing.assert_frame_equal(df, original)
+
+
+def test_fang_rel_008_keeps_ad_diagnosis_when_sample_reaches_boundary():
+    df = pd.DataFrame(
+        {
+            "sku": ["A"],
+            "parent_asin": ["P1"],
+            "product_line": ["L1"],
+            "sku_role": ["低效异常 SKU"],
+            "sales_14d_amount": [100],
+            "sales_14d_units": [10],
+            "order_gross_profit": [10],
+            "order_gross_margin": [0.10],
+            "ad_spend": [20],
+            "ad_sales": [20],
+            "ad_clicks": [20],
+            "stock_days": [45],
+            "available_qty": [20],
+            "final_action": ["控广告"],
+            "priority": ["P2"],
+        }
+    )
+
+    report = build_product_line_diagnosis(
+        df,
+        "L1",
+        thresholds={
+            "ads": {
+                "minimum_spend_for_reliable_acos": 20,
+                "minimum_clicks_for_reliable_cvr": 20,
+            }
+        },
+    )
+    ad_diagnosis = report["relationship_diagnostics"].query("诊断关系 == '广告-销售-利润'").iloc[0]
+
+    assert ad_diagnosis["原因等级"] == "高概率原因"
+    assert ad_diagnosis["报告优先级"] == "P1"
+    assert ad_diagnosis["行动状态"] == "需处理"

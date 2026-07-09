@@ -1,0 +1,48 @@
+model:
+  skill_name: Fang经营诊断官
+  methodology_name: Fang经营矛盾诊断法
+  model_name: Fang经营关系诊断模型
+  version: FANG_DIAGNOSIS_V0_1
+  source: Fang经营关系诊断模型_V0.1（用户提供规范；DOCX待复核）
+  business_priority:
+    - turnover
+    - scale
+    - gross_profit
+    - gross_margin
+
+thresholds:
+  inventory:
+    healthy_days_max: {value: 90, status: stable}
+    warning_days: {value: 120, status: provisional}
+    critical_days: {value: 180, status: stable}
+    severe_days: {value: 365, status: provisional}
+    stockout_days: {value: 30, status: stable}
+    target_90_plus_share: {value: 0.25, status: stable}
+    high_180_plus_share: {value: 0.50, status: provisional}
+  profitability:
+    negative_profit: {value: 0, status: stable}
+    high_margin: {value: 0.15, status: stable}
+    margin_conflict_tolerance: {value: 0.03, status: provisional}
+    low_absolute_profit: {value: 10, status: experimental}
+  advertising:
+    minimum_spend_for_reliable_acos: {value: 20, status: provisional}
+    minimum_clicks_for_reliable_cvr: {value: 20, status: provisional}
+    ratio_tolerance: {value: 0.05, status: stable}
+    resource_mismatch_share_gap: {value: 0.15, status: provisional}
+    high_acos: {value: 0.35, status: provisional}
+  sales:
+    target_gap_ratio: {value: 0.75, status: provisional}
+    high_volume_share: {value: 0.20, status: experimental}
+  sku_roles:
+    inefficient_share_warning: {value: 0.50, status: provisional}
+  validation:
+    inventory_days_relative_tolerance: {value: 0.20, status: provisional}
+    inventory_days_absolute_tolerance: {value: 30, status: provisional}
+    count_tolerance: {value: 1, status: stable}
+  actions:
+    p0_deadline_days: {value: 2, status: provisional}
+    p1_deadline_days: {value: 7, status: provisional}
+    p2_deadline_days: {value: 14, status: provisional}
+    p3_deadline_days: {value: 30, status: provisional}
+    price_test_days: {value: 7, status: provisional}
+    default_observation_days: {value: 7, status: provisional}

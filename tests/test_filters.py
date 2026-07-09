@@ -5,6 +5,7 @@ from app import (
     SECTION_INTROS,
     TAB_LABELS,
     _apply_filters,
+    _product_line_card_rows,
     _column_label,
     _display_columns,
     _filter_label,
@@ -12,6 +13,7 @@ from app import (
 )
 from modules.loader import apply_column_mapping, load_yaml
 from modules.pipeline import prepare_full_sku_table
+from modules.product_line_analysis import analyze_product_lines
 
 
 def test_filter_options_are_linked_across_all_dimensions():
@@ -175,3 +177,34 @@ def test_column_headers_have_chinese_labels():
     assert _column_label("order_gross_margin") == "订单毛利率"
     assert _column_label("category_level_3") == "三级分类"
     assert _column_label("unknown_field") == "unknown_field"
+
+
+def test_unfiltered_product_line_cards_include_action_queue_and_period_sales():
+    df = pd.DataFrame(
+        {
+            "sku": ["A", "B", "C"],
+            "parent_asin": ["P1", "P1", "P2"],
+            "spu": ["S1", "S1", "S2"],
+            "product_line": ["LineA", "LineA", "LineB"],
+            "sales_7d_units": [7, 14, 21],
+            "sales_14d_units": [70, 140, 210],
+            "sales_7d_amount": [100, 200, 300],
+            "sales_14d_amount": [1000, 2000, 3000],
+            "available_stock_qty": [20, 40, 60],
+            "ad_spend": [10, 20, 30],
+            "ad_sales": [50, 100, 150],
+            "order_gross_profit": [20, 30, 40],
+            "final_action": ["立即补货", "禁止补货", "观察"],
+            "priority": ["P1", "P0", "P4"],
+        }
+    )
+    summary = analyze_product_lines(df, sales_period="7d")
+
+    rows = _product_line_card_rows(df, summary, "7d")
+    line_a = next(row for row in rows if row["product_line"] == "LineA")
+
+    assert line_a["sales_amount"] == 300
+    assert line_a["p0_p1_count"] == 2
+    assert line_a["urgent_replenishment_count"] == 1
+    assert line_a["clearance_stop_count"] == 1
+    assert line_a["spu_count"] == 1
